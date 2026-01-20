@@ -8,18 +8,17 @@ import { ThemedView } from '@/components/themed-view';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 
-export default function HomeScreen() {
+export default function LandingScreen() {
   return (
     <ParallaxScrollView
-      headerBackgroundColor={{ light: '#FCE7F3', dark: '#111827' }}
-      headerImage={
-        <Image source={require('@/assets/images/splash-icon.png')} style={styles.heroImage} />
-      }>
+      headerBackgroundColor={{ light: '#FCE7F3', dark: '#020617' }}
+      headerImage={<Image source={require('@/assets/images/splash-icon.png')} style={styles.heroImage} />}>
       <ThemedView style={styles.titleContainer}>
         <ThemedText type="subtitle">Projet avec le J</ThemedText>
         <ThemedText type="title">Relais entre les séances</ThemedText>
         <ThemedText>
-          Une bulle de parole continue entre les séances, pour les patients et les thérapeutes.
+          Une bulle de parole continue entre les séances, pour les patients et les thérapeutes. MVP centré
+          sur les moments de down.
         </ThemedText>
       </ThemedView>
 
@@ -27,10 +26,10 @@ export default function HomeScreen() {
         <Card style={styles.card}>
           <ThemedText type="subtitle">Espace patient</ThemedText>
           <ThemedText style={styles.cardText}>
-            Rejoins ta bulle sécurisée avec le lien reçu de ton thérapeute. Disponible 24h/24.
+            Rejoins ta bulle sécurisée en scannant le QR code donné par ton thérapeute. Disponible 24h/24.
           </ThemedText>
-          <Link href="/patient/magic-link" asChild>
-            <Button title="J’ai reçu un lien" />
+          <Link href="/patient" asChild>
+            <Button title="Scanner mon QR code" />
           </Link>
         </Card>
       </View>
@@ -39,11 +38,10 @@ export default function HomeScreen() {
         <Card style={styles.card}>
           <ThemedText type="subtitle">Espace thérapeute</ThemedText>
           <ThemedText style={styles.cardText}>
-            Visualise les moments clés entre les séances, centralise tes patients, sans remplacer la
-            relation humaine.
+            Visualise les moments-clés entre deux séances, sans remplacer la relation humaine.
           </ThemedText>
-          <Link href="/therapist/login" asChild>
-            <Button title="Se connecter" variant="secondary" />
+          <Link href="/therapist" asChild>
+            <Button title="Espace thérapeute" variant="secondary" />
           </Link>
         </Card>
       </View>
