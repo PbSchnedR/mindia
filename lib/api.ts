@@ -1,9 +1,17 @@
 import { Platform } from 'react-native';
+import Constants from 'expo-constants';
 import type { ChatSession, Patient, Session, Therapist } from '@/lib/types';
 import { storageGetJson, storageSetJson, storageRemove } from '@/lib/storage';
 
 // Configuration de l'API
 const getBaseUrl = () => {
+  // Vérifier d'abord les variables d'environnement Expo
+  const envUrl = Constants.expoConfig?.extra?.apiUrl;
+  
+  if (envUrl) {
+    return envUrl;
+  }
+  
   // En développement sur Android emulator, localhost pointe vers l'émulateur
   // Il faut utiliser 10.0.2.2 pour accéder à la machine host
   if (Platform.OS === 'android') {
@@ -13,29 +21,58 @@ const getBaseUrl = () => {
   return 'http://localhost:3000/api';
 };
 
-const API_BASE_URL = getBaseUrl();
+const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || getBaseUrl();
 const TOKEN_KEY = 'mindia:v1:token';
 
 // Flag pour savoir si le backend est disponible
 let backendAvailable: boolean | null = null;
+let backendCheckInProgress: Promise<boolean> | null = null;
 
-// Vérifier si le backend est disponible
-async function checkBackendHealth(): Promise<boolean> {
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 3000);
+// Vérifier si le backend est disponible (avec retry pour Render cold start)
+async function checkBackendHealth(retries = 5, delayMs = 3000): Promise<boolean> {
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout pour Render
+      
+      const response = await fetch(`${API_BASE_URL}/health`, {
+        signal: controller.signal
+      });
+      
+      clearTimeout(timeoutId);
+      
+      if (response.ok) {
+        backendAvailable = true;
+        return true;
+      }
+    } catch {
+      // Continue to retry
+    }
     
-    const response = await fetch(`${API_BASE_URL}/health`, {
-      signal: controller.signal
-    });
-    
-    clearTimeout(timeoutId);
-    backendAvailable = response.ok;
-    return backendAvailable;
-  } catch {
-    backendAvailable = false;
-    return false;
+    // Si ce n'est pas le dernier essai, attendre avant de réessayer
+    if (attempt < retries) {
+      console.log(`[API] Backend pas encore disponible, tentative ${attempt}/${retries}. Nouvelle tentative dans ${delayMs/1000}s...`);
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+    }
   }
+  
+  backendAvailable = false;
+  return false;
+}
+
+// Attendre que le backend soit disponible (utilisé au démarrage)
+async function waitForBackend(): Promise<boolean> {
+  if (backendAvailable === true) return true;
+  
+  // Éviter les appels multiples simultanés
+  if (backendCheckInProgress) {
+    return backendCheckInProgress;
+  }
+  
+  backendCheckInProgress = checkBackendHealth();
+  const result = await backendCheckInProgress;
+  backendCheckInProgress = null;
+  return result;
 }
 
 // Obtenir le token stocké
@@ -100,12 +137,17 @@ async function apiRequest<T>(
 // === API ===
 
 export const api = {
-  // Vérifier la disponibilité du backend
+  // Vérifier la disponibilité du backend (check rapide)
   isAvailable: async (): Promise<boolean> => {
     if (backendAvailable === null) {
-      return checkBackendHealth();
+      return checkBackendHealth(1, 0); // Un seul essai, pas de retry
     }
     return backendAvailable;
+  },
+  
+  // Attendre que le backend soit disponible (avec retries pour cold start)
+  waitForBackend: async (): Promise<boolean> => {
+    return waitForBackend();
   },
   
   // Forcer une nouvelle vérification

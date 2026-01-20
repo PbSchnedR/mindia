@@ -58,52 +58,23 @@ function normalizePatient(patient: any): Patient {
 }
 
 export async function getTherapistById(therapistId: string): Promise<Therapist | null> {
-  // Essayer d'abord l'API backend
-  try {
-    if (await api.isAvailable()) {
-      const { therapist } = await api.therapist.getById(therapistId);
-      return normalizeTherapist(therapist);
-    }
-  } catch (error) {
-    console.log('API indisponible, utilisation des données mock:', error);
-  }
-
-  // Fallback sur les données mock
-  const db = await dbGet();
-  return db.therapists.find((t) => t.id === therapistId) ?? null;
+  // Attendre que le backend soit disponible (pas de fallback mock)
+  await api.waitForBackend();
+  const { therapist } = await api.therapist.getById(therapistId);
+  return normalizeTherapist(therapist);
 }
 
 export async function listPatientsForTherapist(therapistId: string): Promise<Patient[]> {
-  // Essayer d'abord l'API backend
-  try {
-    if (await api.isAvailable()) {
-      const { patients } = await api.therapist.getPatients();
-      return patients.map(normalizePatient);
-    }
-  } catch (error) {
-    console.log('API indisponible, utilisation des données mock:', error);
-  }
-
-  // Fallback sur les données mock
-  const db = await dbGet();
-  return db.patients
-    .filter((p) => p.therapistId === therapistId)
-    .sort((a, b) => (a.lastName + a.firstName).localeCompare(b.lastName + b.firstName));
+  // Attendre que le backend soit disponible (pas de fallback mock)
+  await api.waitForBackend();
+  const { patients } = await api.therapist.getPatients();
+  return patients.map(normalizePatient);
 }
 
 export async function getPatientById(patientId: string): Promise<Patient | null> {
-  // Essayer d'abord l'API backend
-  try {
-    if (await api.isAvailable()) {
-      const { patient } = await api.patient.getById(patientId);
-      return normalizePatient(patient);
-    }
-  } catch (error) {
-    console.log('API indisponible, utilisation des données mock:', error);
-  }
-
-  // Fallback sur les données mock
-  const db = await dbGet();
-  return db.patients.find((p) => p.id === patientId) ?? null;
+  // Attendre que le backend soit disponible (pas de fallback mock)
+  await api.waitForBackend();
+  const { patient } = await api.patient.getById(patientId);
+  return normalizePatient(patient);
 }
 

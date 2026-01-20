@@ -48,37 +48,19 @@ export async function signInPatientByMagicToken(tokenRaw: string): Promise<Sessi
   const token = tokenRaw.trim();
   if (!token) throw new Error('Veuillez entrer votre email.');
 
-  // Essayer d'abord l'API backend (maintenant on utilise l'email)
-  try {
-    if (await api.isAvailable()) {
-      const { session } = await api.auth.login(token); // token = email pour les patients
-      await storageSetJson(SESSION_KEY, session);
-      return session;
-    }
-  } catch (error: any) {
-    // Si le backend a répondu avec une erreur, on la propage
-    if (error?.message) {
-      throw new Error(getErrorMessage(error));
-    }
-    console.log('API indisponible, utilisation des données mock');
+  // Attendre que le backend soit disponible (pas de fallback mock)
+  const isAvailable = await api.waitForBackend();
+  if (!isAvailable) {
+    throw new Error('Le serveur est temporairement indisponible. Réessayez dans quelques instants.');
   }
 
-  // Fallback sur les données mock
-  const db = await dbGet();
-  const patient = db.patients.find((p) => 
-    p.magicToken.toLowerCase() === token.toUpperCase() ||
-    p.email?.toLowerCase() === token.toLowerCase()
-  );
-  if (!patient) throw new Error('Email ou code invalide. Vérifiez auprès de votre thérapeute.');
-
-  const session: Session = {
-    role: 'patient',
-    patientId: patient.id,
-    therapistId: patient.therapistId,
-    token,
-  };
-  await storageSetJson(SESSION_KEY, session);
-  return session;
+  try {
+    const { session } = await api.auth.login(token); // token = email pour les patients
+    await storageSetJson(SESSION_KEY, session);
+    return session;
+  } catch (error: any) {
+    throw new Error(getErrorMessage(error));
+  }
 }
 
 export async function signInTherapist(emailRaw: string, passwordRaw: string): Promise<Session> {
@@ -88,30 +70,18 @@ export async function signInTherapist(emailRaw: string, passwordRaw: string): Pr
   if (!email) throw new Error('Veuillez entrer votre email.');
   if (!password) throw new Error('Veuillez entrer votre mot de passe.');
 
-  // Essayer d'abord l'API backend
+  // Attendre que le backend soit disponible (pas de fallback mock)
+  const isAvailable = await api.waitForBackend();
+  if (!isAvailable) {
+    throw new Error('Le serveur est temporairement indisponible. Réessayez dans quelques instants.');
+  }
+
   try {
-    if (await api.isAvailable()) {
-      const { session } = await api.auth.loginTherapist(email, password);
-      await storageSetJson(SESSION_KEY, session);
-      return session;
-    }
+    const { session } = await api.auth.loginTherapist(email, password);
+    await storageSetJson(SESSION_KEY, session);
+    return session;
   } catch (error: any) {
-    // Si le backend a répondu avec une erreur, on la propage
-    if (error?.message) {
-      throw new Error(getErrorMessage(error));
-    }
-    console.log('API indisponible, utilisation des données mock');
+    throw new Error(getErrorMessage(error));
   }
-
-  // Fallback sur les données mock
-  const db = await dbGet();
-  const therapist = db.therapists.find((t) => t.email.toLowerCase() === email);
-  if (!therapist || therapist.password !== password) {
-    throw new Error('Email ou mot de passe incorrect.');
-  }
-
-  const session: Session = { role: 'therapist', therapistId: therapist.id, email: therapist.email };
-  await storageSetJson(SESSION_KEY, session);
-  return session;
 }
 
