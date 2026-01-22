@@ -52,6 +52,7 @@ export default function TherapistDashboardScreen() {
       return () => clearTimeout(timeout);
     }
     
+    // Charger les données uniquement si on a une session valide
     void (async () => {
       setLoading(true);
       setError(null);
@@ -63,7 +64,13 @@ export default function TherapistDashboardScreen() {
         await loadPatients();
       } catch (err: any) {
         console.error('Erreur chargement dashboard:', err);
-        setError('Une erreur est survenue. Vérifiez votre connexion et réessayez.');
+        // Vérifier si c'est une erreur d'authentification
+        if (err?.status === 401 || err?.message?.toLowerCase().includes('token')) {
+          // Token invalide, rediriger vers la page de connexion
+          await handleSignOut();
+        } else {
+          setError('Une erreur est survenue. Vérifiez votre connexion et réessayez.');
+        }
       } finally {
         setLoading(false);
       }

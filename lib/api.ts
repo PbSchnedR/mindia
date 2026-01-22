@@ -24,6 +24,9 @@ const getBaseUrl = () => {
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || getBaseUrl();
 const TOKEN_KEY = 'mindia:v1:token';
 
+// Cache mémoire pour le token (pour éviter les problèmes de timing avec AsyncStorage)
+let tokenCache: string | null = null;
+
 // Flag pour savoir si le backend est disponible
 let backendAvailable: boolean | null = null;
 let backendCheckInProgress: Promise<boolean> | null = null;
@@ -75,18 +78,31 @@ async function waitForBackend(): Promise<boolean> {
   return result;
 }
 
-// Obtenir le token stocké
+// Obtenir le token stocké (utilise le cache mémoire en priorité)
 async function getToken(): Promise<string | null> {
-  return storageGetJson<string>(TOKEN_KEY);
+  if (tokenCache) {
+    return tokenCache;
+  }
+  // Utiliser getItem directement pour le token (pas JSON.parse)
+  const stored = await storageGetJson<string>(TOKEN_KEY);
+  if (stored) {
+    tokenCache = stored;
+  }
+  return stored;
 }
 
-// Sauvegarder le token
+// Sauvegarder le token (en mémoire ET dans le storage)
 async function setToken(token: string): Promise<void> {
-  await storageSetJson(TOKEN_KEY, token);
+  console.log('[API] Sauvegarde du token:', token.substring(0, 20) + '...');
+  tokenCache = token; // Sauvegarder d'abord en cache mémoire (disponible immédiatement)
+  await storageSetJson(TOKEN_KEY, token); // Puis dans AsyncStorage pour persistance
+  console.log('[API] Token sauvegardé avec succès');
 }
 
-// Supprimer le token
+// Supprimer le token (de la mémoire ET du storage)
 async function removeToken(): Promise<void> {
+  console.log('[API] Suppression du token');
+  tokenCache = null;
   await storageRemove(TOKEN_KEY);
 }
 
@@ -107,6 +123,8 @@ async function apiRequest<T>(
 ): Promise<T> {
   const token = await getToken();
   
+  console.log('[API] Requête:', endpoint, 'Token présent:', !!token, token ? `(${token.substring(0, 20)}...)` : '');
+  
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
     ...options.headers,
@@ -124,6 +142,7 @@ async function apiRequest<T>(
   const data = await response.json().catch(() => ({}));
   
   if (!response.ok) {
+    console.error('[API] Erreur:', response.status, data.error || HTTP_ERROR_MESSAGES[response.status]);
     // Utiliser le message d'erreur du backend s'il existe, sinon utiliser un message par défaut
     const errorMessage = data.error || HTTP_ERROR_MESSAGES[response.status] || 'Erreur serveur';
     const error = new Error(errorMessage) as Error & { status: number };
@@ -192,6 +211,35 @@ export const api = {
     loginPatientByMagicToken: async (email: string): Promise<{ session: Session; token: string }> => {
       const data = await api.auth.login(email);
       return { session: data.session, token: data.token };
+    },
+    
+    // Connexion via token (magic token ou JWT) pour QR code ou restauration de session
+    loginWithToken: async (token: string): Promise<{ session: Session; user: any }> => {
+      const data = await apiRequest<{ session: Session; token: string; user: any }>('/auth/verify', {
+        method: 'POST',
+        body: JSON.stringify({ token }),
+      });
+      // Le backend retourne un JWT (nouveau si magic token, existant sinon)
+      await setToken(data.token);
+      console.log('[API] JWT stocké après vérification du token');
+      return data;
+    },
+    
+    // Vérifier si un token est valide (sans le sauvegarder)
+    verifyToken: async (token: string): Promise<{ session: Session; user: any } | null> => {
+      try {
+        return await apiRequest<{ session: Session; user: any }>('/auth/verify', {
+          method: 'POST',
+          body: JSON.stringify({ token }),
+        });
+      } catch {
+        return null;
+      }
+    },
+    
+    // Récupérer le token stocké
+    getStoredToken: async (): Promise<string | null> => {
+      return getToken();
     },
     
     // Déconnexion
@@ -307,9 +355,8 @@ export const api = {
       return { therapist: user };
     },
     getPatients: async (): Promise<{ patients: Patient[] }> => {
-      const token = await getToken();
-      if (!token) throw new Error('Non connecté');
-      const { patients } = await api.users.getPatients(token);
+      // Utilise la route protégée qui extrait l'ID du token JWT
+      const { patients } = await apiRequest<{ patients: Patient[] }>('/therapist/patients');
       return { patients };
     },
   },
@@ -322,6 +369,10 @@ export const api = {
     getById: async (patientId: string): Promise<{ patient: Patient }> => {
       const { user } = await api.users.getById(patientId);
       return { patient: user };
+    },
+    // Générer un magic token à usage unique pour le QR code (expire après 24h)
+    generateMagicToken: async (patientId: string): Promise<{ magicToken: string; expiresIn: string; patient: any }> => {
+      return apiRequest(`/users/${patientId}/token`);
     },
   },
 
@@ -349,11 +400,10 @@ export const api = {
       return { sessions: [] };
     },
     
-    startSession: async (): Promise<{ session: ChatSession }> => {
-      const token = await getToken();
+    startSession: async (patientId: string): Promise<{ session: ChatSession }> => {
       const session: ChatSession = {
-        id: token || 'new',
-        patientId: token || '',
+        id: patientId,
+        patientId,
         therapistId: '',
         createdAt: new Date().toISOString(),
         messages: [],
@@ -361,11 +411,13 @@ export const api = {
       return { session };
     },
     
-    addMessage: async (sessionId: string, text: string): Promise<{ session: ChatSession }> => {
-      const token = await getToken();
-      if (!token) throw new Error('Non connecté');
-      await api.messages.add(token, 'patient', text);
-      const { sessions } = await api.chat.listSessionsForPatient(token);
+    addMessage: async (
+      patientId: string,
+      author: 'therapist' | 'patient' | 'ai',
+      text: string
+    ): Promise<{ session: ChatSession }> => {
+      await api.messages.add(patientId, author, text);
+      const { sessions } = await api.chat.listSessionsForPatient(patientId);
       return { session: sessions[0] };
     },
     

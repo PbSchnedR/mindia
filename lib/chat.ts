@@ -15,9 +15,9 @@ function normalizeSession(session: any): ChatSession {
     createdAt: session.createdAt,
     messages: (session.messages || []).map((m: any) => ({
       id: m._id || m.id || uid('m'),
-      author: m.author,
-      text: m.text,
-      createdAt: m.createdAt,
+      author: m.author ?? m.from,
+      text: m.text ?? m.content,
+      createdAt: m.createdAt || new Date().toISOString(),
     })),
     severity: session.severity,
     keywords: session.keywords,
@@ -65,7 +65,7 @@ export async function startChatSession(patientId: string, therapistId: string): 
   // Essayer d'abord l'API backend
   try {
     if (await api.isAvailable()) {
-      const { session } = await api.chat.startSession();
+      const { session } = await api.chat.startSession(patientId);
       return normalizeSession(session);
     }
   } catch (error) {
@@ -104,7 +104,7 @@ export async function appendMessage(
   // Essayer d'abord l'API backend
   try {
     if (await api.isAvailable()) {
-      const { session } = await api.chat.addMessage(chatSessionId, trimmed);
+      const { session } = await api.chat.addMessage(chatSessionId, author, trimmed);
       return normalizeSession(session);
     }
   } catch (error) {

@@ -32,6 +32,29 @@ export async function getSession(): Promise<Session | null> {
   return await storageGetJson<Session>(SESSION_KEY);
 }
 
+export async function saveSession(session: Session): Promise<void> {
+  await storageSetJson(SESSION_KEY, session);
+}
+
+// Se connecter avec un token JWT (scanné depuis QR code)
+export async function signInWithToken(token: string): Promise<Session> {
+  if (!token) throw new Error('Token invalide.');
+
+  // Attendre que le backend soit disponible
+  const isAvailable = await api.waitForBackend();
+  if (!isAvailable) {
+    throw new Error('Le serveur est temporairement indisponible. Réessayez dans quelques instants.');
+  }
+
+  try {
+    const { session } = await api.auth.loginWithToken(token);
+    await storageSetJson(SESSION_KEY, session);
+    return session;
+  } catch (error: any) {
+    throw new Error(getErrorMessage(error));
+  }
+}
+
 export async function signOut(): Promise<void> {
   // Essayer d'abord l'API
   try {

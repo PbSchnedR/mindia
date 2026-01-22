@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, View, Pressable } from 'react-native';
+import { ScrollView, StyleSheet, View, Pressable, Linking } from 'react-native';
 
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -8,6 +8,8 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useSession } from '@/lib/session-context';
 import { api } from '@/lib/api';
+import { listChatSessionsForPatient, setSeverity, setSummaryAndKeywords, simpleAutoSummary, startChatSession } from '@/lib/chat';
+import type { Severity } from '@/lib/types';
 
 interface Report {
   _id: string;
@@ -23,6 +25,7 @@ interface PatientInfo {
   nextSessionAt?: string;
   sessionsDone?: number;
   therapyTopic?: string;
+  bookingUrl?: string;
 }
 
 export default function PatientDashboardScreen() {
@@ -31,6 +34,8 @@ export default function PatientDashboardScreen() {
   const [patientInfo, setPatientInfo] = useState<PatientInfo | null>(null);
   const [reports, setReports] = useState<Report[]>([]);
   const [lastSummary, setLastSummary] = useState<string | null>(null);
+  const [chatSessionId, setChatSessionId] = useState<string | null>(null);
+  const [mood, setMood] = useState<Severity | undefined>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -70,9 +75,27 @@ export default function PatientDashboardScreen() {
       if (aiMessages.length > 0) {
         setLastSummary(aiMessages[aiMessages.length - 1].text);
       }
+
+      // Préparer la session de bulle pour le mood
+      const sessions = await listChatSessionsForPatient(patientId);
+      if (sessions.length > 0) {
+        const latest = sessions[0];
+        setChatSessionId(latest.id);
+        setMood(latest.severity);
+      } else {
+        const created = await startChatSession(patientId, session.therapistId);
+        setChatSessionId(created.id);
+        setMood(created.severity);
+      }
     } catch (err: any) {
       console.error('Erreur chargement dashboard patient:', err);
-      setError('Impossible de charger tes informations. Réessaye plus tard.');
+      // Vérifier si c'est une erreur d'authentification
+      if (err?.status === 401 || err?.message?.toLowerCase().includes('token')) {
+        // Token invalide, rediriger vers la page de connexion
+        await handleSignOut();
+      } else {
+        setError('Impossible de charger tes informations. Réessaye plus tard.');
+      }
     } finally {
       setLoading(false);
     }
@@ -85,6 +108,28 @@ export default function PatientDashboardScreen() {
 
   const handleOpenChat = () => {
     router.push('/patient/chat');
+  };
+
+  const handleSelectMood = async (value: Severity) => {
+    if (!chatSessionId) return;
+    try {
+      const updated = await setSeverity(chatSessionId, value);
+      setMood(updated.severity);
+
+      const { summary, keywords } = simpleAutoSummary(updated.messages);
+      await setSummaryAndKeywords(chatSessionId, summary, keywords);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleBooking = () => {
+    if (patientInfo?.bookingUrl) {
+      void Linking.openURL(patientInfo.bookingUrl);
+    } else {
+      // eslint-disable-next-line no-alert
+      alert('Lien de prise de RDV non configuré.');
+    }
   };
 
   const formatDate = (dateStr?: string) => {
@@ -143,22 +188,6 @@ export default function PatientDashboardScreen() {
           </Pressable>
         </View>
 
-        {/* Bouton chat */}
-        <Card style={styles.chatCard}>
-          <View style={styles.chatContent}>
-            <View style={styles.chatIcon}>
-              <ThemedText style={styles.chatEmoji}>💬</ThemedText>
-            </View>
-            <View style={styles.chatTextContainer}>
-              <ThemedText type="defaultSemiBold">Besoin de parler ?</ThemedText>
-              <ThemedText style={styles.chatSubtext}>
-                Ta bulle est là pour toi, 24h/24
-              </ThemedText>
-            </View>
-          </View>
-          <Button title="Ouvrir ma bulle" onPress={handleOpenChat} />
-        </Card>
-
         {/* Infos séances */}
         <Card style={styles.infoCard}>
           <ThemedText type="defaultSemiBold" style={styles.sectionTitle}>
@@ -196,6 +225,72 @@ export default function PatientDashboardScreen() {
               </View>
             )}
           </View>
+          <Button title="Prendre un RDV" variant="secondary" onPress={handleBooking} />
+        </Card>
+
+        {/* Mood */}
+        <Card style={styles.moodCard}>
+          <ThemedText type="defaultSemiBold" style={styles.sectionTitle}>
+            Comment tu te situes là, tout de suite ?
+          </ThemedText>
+          <View style={styles.moodRow}>
+            <Button
+              title="Plutôt gérable"
+              variant={mood === 1 ? 'primary' : 'secondary'}
+              onPress={() => handleSelectMood(1)}
+            />
+            <Button
+              title="En difficulté"
+              variant={mood === 2 ? 'primary' : 'secondary'}
+              onPress={() => handleSelectMood(2)}
+            />
+            <Button
+              title="Crise / urgence"
+              variant={mood === 3 ? 'danger' : 'secondary'}
+              onPress={() => handleSelectMood(3)}
+            />
+          </View>
+        </Card>
+
+        {/* Conseils */}
+        <Card style={styles.tipsCard}>
+          <ThemedText type="defaultSemiBold" style={styles.sectionTitle}>
+            Conseils rapides
+          </ThemedText>
+          <View style={styles.tipItem}>
+            <ThemedText style={styles.tipTitle}>Exercice de respiration</ThemedText>
+            <ThemedText style={styles.tipText}>
+              Inspire 4s, pause 4s, expire 6s. Répète 5 fois.
+            </ThemedText>
+          </View>
+          <View style={styles.tipItem}>
+            <ThemedText style={styles.tipTitle}>Marcher 5 minutes</ThemedText>
+            <ThemedText style={styles.tipText}>
+              Sortir un instant aide à faire redescendre la pression.
+            </ThemedText>
+          </View>
+          <View style={styles.tipItem}>
+            <ThemedText style={styles.tipTitle}>Appeler un proche</ThemedText>
+            <ThemedText style={styles.tipText}>
+              Écrire ou appeler quelqu’un peut soulager rapidement.
+            </ThemedText>
+          </View>
+        </Card>
+
+        {/* Accès bulle */}
+        <Card style={styles.chatCard}>
+          <View style={styles.chatContent}>
+            <View style={styles.chatIcon}>
+              <ThemedText style={styles.chatEmoji}>💬</ThemedText>
+            </View>
+            <View style={styles.chatTextContainer}>
+              <ThemedText type="defaultSemiBold">Entrer dans ma bulle</ThemedText>
+              <ThemedText style={styles.chatSubtext}>
+                Écris librement et reviens quand tu veux.
+              </ThemedText>
+            </View>
+          </View>
+          <Button title="Ouvrir ma bulle" onPress={handleOpenChat} />
         </Card>
 
         {/* Dernière synthèse */}
@@ -306,6 +401,33 @@ const styles = StyleSheet.create({
   infoCard: {
     marginBottom: 16,
     gap: 12,
+  },
+  moodCard: {
+    marginBottom: 16,
+    gap: 12,
+  },
+  moodRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  tipsCard: {
+    marginBottom: 16,
+    gap: 12,
+  },
+  tipItem: {
+    paddingVertical: 6,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(156, 163, 175, 0.15)',
+  },
+  tipTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  tipText: {
+    fontSize: 13,
+    opacity: 0.75,
+    marginTop: 2,
   },
   sectionTitle: {
     marginBottom: 4,

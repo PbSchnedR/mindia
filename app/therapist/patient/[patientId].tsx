@@ -1,13 +1,13 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, View, Platform } from 'react-native';
-import QRCode from 'react-native-qrcode-svg';
+import { ScrollView, StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { SeverityBadge } from '@/components/ui/badge';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { QRCodeDisplay } from '@/components/qr-code-display';
 import { listChatSessionsForTherapist } from '@/lib/chat';
 import { useSession } from '@/lib/session-context';
 import { getPatientById } from '@/lib/people';
@@ -28,6 +28,8 @@ export default function TherapistPatientDetailScreen() {
 
   const [patient, setPatient] = useState<Patient | null>(null);
   const [patientEmail, setPatientEmail] = useState<string>('');
+  const [magicToken, setMagicToken] = useState<string>('');
+  const [tokenExpiresIn, setTokenExpiresIn] = useState<string>('');
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
@@ -47,6 +49,11 @@ export default function TherapistPatientDetailScreen() {
         // Charger les infos du patient via l'API
         const { user } = await api.users.getById(patientId);
         setPatientEmail(user.email || '');
+        
+        // Générer un magic token à usage unique pour le QR code (expire après 24h)
+        const { magicToken: token, expiresIn } = await api.patient.generateMagicToken(patientId);
+        setMagicToken(token || '');
+        setTokenExpiresIn(expiresIn || '24h');
         
         // Normaliser pour la compatibilité
         const p = await getPatientById(patientId);
@@ -76,11 +83,25 @@ export default function TherapistPatientDetailScreen() {
     router.back();
   };
 
-  // Le QR code contient l'email du patient pour la connexion
+  // Le QR code contient le magic token à usage unique (expire après 24h)
   const qrCodeValue = useMemo(() => {
-    if (!patientEmail) return '';
-    return `mindia://patient?email=${encodeURIComponent(patientEmail)}`;
-  }, [patientEmail]);
+    return magicToken || '';
+  }, [magicToken]);
+  
+  // Fonction pour régénérer un nouveau QR code
+  const handleRegenerateQRCode = async () => {
+    try {
+      const raw = params.patientId;
+      const patientId = Array.isArray(raw) ? raw[0] : raw;
+      if (!patientId || typeof patientId !== 'string') return;
+      
+      const { magicToken: token, expiresIn } = await api.patient.generateMagicToken(patientId);
+      setMagicToken(token || '');
+      setTokenExpiresIn(expiresIn || '24h');
+    } catch (e) {
+      console.error('Erreur régénération QR code', e);
+    }
+  };
 
   const formatDateTime = (dateStr: string) => {
     return new Date(dateStr).toLocaleDateString('fr-FR', {
@@ -155,35 +176,39 @@ export default function TherapistPatientDetailScreen() {
         <View style={{ height: 12 }} />
 
         {/* QR Code pour inviter le patient */}
-        {patientEmail ? (
+        {qrCodeValue ? (
           <Card style={styles.section}>
-            <ThemedText type="defaultSemiBold">Inviter le patient dans sa bulle</ThemedText>
+            <ThemedText type="defaultSemiBold">🔐 Inviter le patient dans sa bulle</ThemedText>
             <ThemedText>
-              Le patient peut scanner ce QR code pour accéder directement à son espace.
+              Le patient scanne ce QR code avec l'app mobile pour accéder à son espace. 
+              <ThemedText style={{ fontWeight: '600' }}> Le code est à usage unique</ThemedText> et expire dans {tokenExpiresIn}.
             </ThemedText>
             <View style={styles.qrWrapper}>
-              {Platform.OS !== 'web' ? (
-                <View style={styles.qrContainer}>
-                  <QRCode
-                    value={qrCodeValue}
-                    size={180}
-                    backgroundColor="white"
-                    color="#111827"
-                  />
-                </View>
-              ) : (
-                <View style={styles.qrMock}>
-                  <ThemedText style={styles.qrMockText}>QR</ThemedText>
-                  <ThemedText style={styles.qrWebHint}>
-                    (Visible sur mobile)
-                  </ThemedText>
-                </View>
-              )}
+              <QRCodeDisplay
+                value={qrCodeValue}
+                size={180}
+                backgroundColor="#ffffff"
+                color="#111827"
+              />
             </View>
             <ThemedText style={styles.magicLinkLabel}>Email du patient</ThemedText>
             <ThemedText style={styles.magicLinkValue}>{patientEmail}</ThemedText>
+            <View style={{ marginTop: 12 }}>
+              <Button 
+                title="🔄 Régénérer un nouveau QR code" 
+                variant="secondary"
+                onPress={handleRegenerateQRCode}
+              />
+            </View>
           </Card>
-        ) : null}
+        ) : (
+          <Card style={styles.section}>
+            <ThemedText type="defaultSemiBold">QR Code</ThemedText>
+            <ThemedText style={{ opacity: 0.7 }}>
+              Génération du QR code en cours...
+            </ThemedText>
+          </Card>
+        )}
 
         <View style={{ height: 12 }} />
 
@@ -281,32 +306,6 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  qrContainer: {
-    padding: 16,
-    backgroundColor: 'white',
-    borderRadius: 16,
-  },
-  qrMock: {
-    width: 180,
-    height: 180,
-    borderRadius: 16,
-    borderWidth: 2,
-    borderStyle: 'dashed',
-    borderColor: '#9CA3AF',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'white',
-  },
-  qrMockText: {
-    fontSize: 32,
-    fontWeight: '700',
-    color: '#9CA3AF',
-  },
-  qrWebHint: {
-    fontSize: 12,
-    color: '#9CA3AF',
-    marginTop: 8,
   },
   magicLinkLabel: {
     fontSize: 12,
