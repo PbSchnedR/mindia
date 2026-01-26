@@ -31,6 +31,13 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
           const token = await api.auth.getStoredToken();
           
           if (token) {
+            const available = await api.isAvailable();
+            if (!available) {
+              console.log('[SessionProvider] Backend indisponible, session conservée');
+              setSession(existing);
+              return;
+            }
+
             console.log('[SessionProvider] Token trouvé, vérification...');
             // Vérifier le token sans afficher d'erreur
             const result = await api.auth.verifyToken(token).catch(() => null);

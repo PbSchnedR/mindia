@@ -10,9 +10,11 @@ import { Button } from '@/components/ui/button';
 import { QRScanner } from '@/components/qr-scanner';
 import { api } from '@/lib/api';
 import { saveSession } from '@/lib/auth';
+import { useSession } from '@/lib/session-context';
 
 export default function LandingScreen() {
   const router = useRouter();
+  const { setSession } = useSession();
   const [showScanner, setShowScanner] = useState(false);
   const [showDebugPatient, setShowDebugPatient] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -37,6 +39,7 @@ export default function LandingScreen() {
           if (result) {
             // Session valide, rediriger selon le rôle
             await saveSession(result.session);
+            setSession(result.session);
             if (result.session.role === 'therapist') {
               setTimeout(() => router.replace('/therapist/dashboard'), 0);
             } else {
@@ -80,6 +83,7 @@ export default function LandingScreen() {
       if (result) {
         console.log('[QR Scan] Token valide, session créée pour:', result.user.role);
         await saveSession(result.session);
+        setSession(result.session);
         
         if (result.session.role === 'patient') {
           console.log('[QR Scan] Redirection vers le dashboard patient');
@@ -115,6 +119,7 @@ export default function LandingScreen() {
 
       const result = await api.auth.loginPatientByMagicToken(debugEmail.trim());
       await saveSession(result.session);
+      setSession(result.session);
       setShowDebugPatient(false);
       router.replace('/patient/dashboard');
     } catch (error: any) {

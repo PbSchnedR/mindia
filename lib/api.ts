@@ -344,6 +344,15 @@ export const api = {
     },
   },
 
+  ai: {
+    reply: async (messages: { from: 'therapist' | 'patient' | 'ai'; text: string }[]): Promise<{ reply: string }> => {
+      return apiRequest('/ai/reply', {
+        method: 'POST',
+        body: JSON.stringify({ messages }),
+      });
+    },
+  },
+
   // Legacy - pour compatibilité avec le code existant
   therapist: {
     getProfile: async (): Promise<{ therapist: Therapist }> => {
@@ -388,8 +397,8 @@ export const api = {
         createdAt: new Date().toISOString(),
         messages: messages.map((m: any, i: number) => ({
           id: m._id || String(i),
-          author: m.from,
-          text: m.text,
+          author: m.author ?? m.from,
+          text: m.text ?? m.content,
           createdAt: m.createdAt || new Date().toISOString(),
         })),
       };

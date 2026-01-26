@@ -11,6 +11,7 @@ import {
   listChatSessionsForPatient,
   startChatSession,
 } from '@/lib/chat';
+import { api } from '@/lib/api';
 import { useSession } from '@/lib/session-context';
 import type { ChatMessage } from '@/lib/types';
 
@@ -25,6 +26,9 @@ export default function PatientChatScreen() {
   const [currentText, setCurrentText] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [chatId, setChatId] = useState<string | null>(null);
+  const [sendStatus, setSendStatus] = useState<'idle' | 'sending' | 'waiting' | 'error'>('idle');
+  const [sendError, setSendError] = useState<string | null>(null);
+  const [backendOk, setBackendOk] = useState<boolean | null>(null);
 
   useEffect(() => {
     if (sessionLoading) return;
@@ -37,6 +41,8 @@ export default function PatientChatScreen() {
     (async () => {
       setLoading(true);
       try {
+        const available = await api.isAvailable();
+        setBackendOk(available);
         const sessions = await listChatSessionsForPatient(session.patientId);
         if (sessions.length > 0) {
           const latest = sessions[0];
@@ -54,7 +60,7 @@ export default function PatientChatScreen() {
         setLoading(false);
       }
     })();
-  }, [session, router]);
+  }, [session, sessionLoading, rootNavState?.key, router]);
 
   // Réponses mockées de l'IA (sera remplacé par vraie IA plus tard)
   const getMockAIResponse = (userMessage: string): string => {
@@ -106,26 +112,62 @@ export default function PatientChatScreen() {
   };
 
   const handleSend = async () => {
-    if (!chatId || !session || session.role !== 'patient') return;
-    if (!currentText.trim()) return;
+    if (!chatId || !session || session.role !== 'patient') {
+      Alert.alert('Patiente un instant', 'La conversation est en cours de chargement.');
+      return;
+    }
+    const textToSend = currentText.trim();
+    if (!textToSend) {
+      setSendError('Écris un message avant d\'envoyer.');
+      return;
+    }
+    setSendError(null);
+    setSendStatus('sending');
     setSending(true);
     try {
+      const optimistic: ChatMessage = {
+        id: `temp_${Date.now().toString(16)}`,
+        author: 'patient',
+        text: textToSend,
+        createdAt: new Date().toISOString(),
+      };
+      setMessages((prev) => [...prev, optimistic]);
+
       // Envoyer le message du patient
-      const updated = await appendMessage(chatId, 'patient', currentText);
+      const updated = await appendMessage(chatId, 'patient', textToSend);
       setMessages(updated.messages);
       
-      const userMessage = currentText;
+      const userMessage = textToSend;
       setCurrentText('');
+      setSendStatus('waiting');
 
       // Attendre un peu pour simuler le "typing" de l'IA
       await new Promise(resolve => setTimeout(resolve, 800));
 
-      // Réponse mockée de l'IA (contextuelle)
-      const aiResponse = getMockAIResponse(userMessage);
+      let aiResponse = '';
+      try {
+        const context = (updated.messages || [])
+          .slice(-12)
+          .map((m) => ({ from: m.author as 'therapist' | 'patient' | 'ai', text: m.text }));
+        const result = await api.ai.reply(context);
+        aiResponse = result.reply;
+      } catch (error) {
+        console.error('[AI] Réponse indisponible, fallback mock', {
+          error,
+          messageCount: updated.messages?.length ?? 0,
+        });
+        Alert.alert('IA indisponible', 'Réponse automatique affichée temporairement.');
+        setSendError('IA indisponible, réponse automatique affichée.');
+        aiResponse = getMockAIResponse(userMessage);
+      }
+
       const auto = await appendMessage(chatId, 'ai', aiResponse);
       setMessages(auto.messages);
+      setSendStatus('idle');
     } catch (e) {
       console.error(e);
+      setSendStatus('error');
+      setSendError("Le message n'a pas pu être envoyé. Réessaie.");
       Alert.alert('Erreur', "Le message n'a pas pu être envoyé.");
     } finally {
       setSending(false);
@@ -200,8 +242,36 @@ export default function PatientChatScreen() {
             value={currentText}
             onChangeText={setCurrentText}
           />
-          <Button title="Envoyer" onPress={handleSend} loading={sending} />
+          <Button
+            title={sending ? 'Envoi...' : 'Envoyer'}
+            onPress={handleSend}
+            loading={sending}
+            disabled={sending}
+          />
         </View>
+        {backendOk === false && (
+          <View style={styles.sendStatusRow}>
+            <Text style={styles.sendStatusWarning}>
+              Serveur indisponible. Les messages ne sont pas synchronisés.
+            </Text>
+          </View>
+        )}
+        {(sendStatus !== 'idle' || sendError) && (
+          <View style={styles.sendStatusRow}>
+            {sendStatus === 'sending' && (
+              <Text style={styles.sendStatusText}>Envoi en cours...</Text>
+            )}
+            {sendStatus === 'waiting' && (
+              <Text style={styles.sendStatusText}>Réponse en cours...</Text>
+            )}
+            {sendStatus === 'error' && sendError && (
+              <Text style={styles.sendStatusError}>{sendError}</Text>
+            )}
+            {sendStatus === 'idle' && sendError && (
+              <Text style={styles.sendStatusError}>{sendError}</Text>
+            )}
+          </View>
+        )}
 
         <View style={styles.footer}>
           <Text style={styles.footerText}>
@@ -300,6 +370,22 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
     alignItems: 'flex-end',
+  },
+  sendStatusRow: {
+    minHeight: 18,
+    paddingHorizontal: 2,
+  },
+  sendStatusText: {
+    fontSize: 12,
+    color: '#94A3B8',
+  },
+  sendStatusWarning: {
+    fontSize: 12,
+    color: '#F59E0B',
+  },
+  sendStatusError: {
+    fontSize: 12,
+    color: '#EF4444',
   },
   input: {
     flex: 1,
