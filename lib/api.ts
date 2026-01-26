@@ -5,24 +5,45 @@ import { storageGetJson, storageSetJson, storageRemove } from '@/lib/storage';
 
 // Configuration de l'API
 const getBaseUrl = () => {
-  // Vérifier d'abord les variables d'environnement Expo
-  const envUrl = Constants.expoConfig?.extra?.apiUrl;
-  
-  if (envUrl) {
+  // Priorité 1: Variable d'environnement Expo (depuis .env)
+  const envUrl = process.env.EXPO_PUBLIC_API_URL;
+  if (envUrl && envUrl !== 'http://localhost:3000/api') {
+    console.log('[API] Utilisation de EXPO_PUBLIC_API_URL:', envUrl);
     return envUrl;
   }
   
-  // En développement sur Android emulator, localhost pointe vers l'émulateur
-  // Il faut utiliser 10.0.2.2 pour accéder à la machine host
+  // Priorité 2: Configuration Expo extra
+  const expoConfigUrl = Constants.expoConfig?.extra?.apiUrl;
+  if (expoConfigUrl && expoConfigUrl !== 'http://localhost:3000/api') {
+    console.log('[API] Utilisation de expoConfig.extra.apiUrl:', expoConfigUrl);
+    return expoConfigUrl;
+  }
+  
+  // Par défaut selon la plateforme
+  if (Platform.OS === 'web') {
+    // Web: toujours localhost
+    return 'http://localhost:3000/api';
+  }
+  
   if (Platform.OS === 'android') {
+    // Android émulateur: 10.0.2.2 pointe vers la machine host
+    // ⚠️ Pour téléphone physique Android, vous devez définir EXPO_PUBLIC_API_URL 
+    // dans .env avec votre IP locale (ex: http://192.168.1.100:3000/api)
     return 'http://10.0.2.2:3000/api';
   }
-  // Pour iOS simulator et web
+  
+  // iOS: localhost fonctionne pour le simulator
+  // ⚠️ Pour téléphone physique iOS, vous devez définir EXPO_PUBLIC_API_URL 
+  // dans .env avec votre IP locale (ex: http://192.168.1.100:3000/api)
   return 'http://localhost:3000/api';
 };
 
 const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || getBaseUrl();
 const TOKEN_KEY = 'mindia:v1:token';
+
+// Log de l'URL utilisée au démarrage
+console.log('[API] URL de base configurée:', API_BASE_URL);
+console.log('[API] Plateforme:', Platform.OS);
 
 // Cache mémoire pour le token (pour éviter les problèmes de timing avec AsyncStorage)
 let tokenCache: string | null = null;

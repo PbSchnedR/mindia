@@ -111,15 +111,22 @@ export default function PatientDashboardScreen() {
   };
 
   const handleSelectMood = async (value: Severity) => {
-    if (!chatSessionId) return;
+    if (!chatSessionId || !session?.patientId) return;
     try {
+      // Sauvegarder actual_mood dans le backend en premier
+      console.log('[Mood] Mise à jour actual_mood pour patient:', session.patientId, 'valeur:', value);
+      await api.users.update(session.patientId, { actual_mood: String(value) });
+      console.log('[Mood] actual_mood mis à jour avec succès');
+
+      // Mettre à jour la session de chat (pour compatibilité)
       const updated = await setSeverity(chatSessionId, value);
       setMood(updated.severity);
 
       const { summary, keywords } = simpleAutoSummary(updated.messages);
       await setSummaryAndKeywords(chatSessionId, summary, keywords);
     } catch (e) {
-      console.error(e);
+      console.error('Erreur lors de la mise à jour du mood:', e);
+      Alert.alert('Erreur', 'Impossible de sauvegarder votre état. Réessayez plus tard.');
     }
   };
 
