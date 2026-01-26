@@ -230,47 +230,7 @@ export default function TherapistPatientDetailScreen() {
 
       <ScrollView contentContainerStyle={styles.scrollContent}>
         {/* Infos clés */}
-        <Card style={styles.section}>
-          <ThemedText type="defaultSemiBold">Infos clés</ThemedText>
-          <ThemedText>
-            Sujet de la thérapie: {patient.therapyTopic ?? 'Non renseigné'}
-          </ThemedText>
-          <ThemedText>
-            Profession: {patient.profession ?? '—'} · Situation familiale: {patient.familySituation ?? '—'}
-          </ThemedText>
-          <ThemedText>
-            Séances effectuées: {patient.sessionsDone ?? 0} · Score global: {patient.score ?? '—'}
-          </ThemedText>
-          {actualMood && (
-            <ThemedText>
-              État actuel: {
-                actualMood === '1' ? '🟢 Plutôt gérable' :
-                actualMood === '2' ? '🟡 En difficulté' :
-                actualMood === '3' ? '🔴 Crise / urgence' :
-                'Non renseigné'
-              }
-            </ThemedText>
-          )}
-          {patient.nextSessionAt ? (
-            <ThemedText>Prochaine séance programmée.</ThemedText>
-          ) : (
-            <ThemedText style={{ opacity: 0.7 }}>Aucune séance programmée (proposer un RDV).</ThemedText>
-          )}
-          {patient.bookingUrl ? (
-            <View style={{ marginTop: 8 }}>
-              <Button
-                title="Ouvrir la page de prise de RDV"
-                variant="secondary"
-                onPress={() => {
-                  // eslint-disable-next-line no-alert
-                  alert(`Lien Doctolib / Médoucine simulé: ${patient.bookingUrl}`);
-                }}
-              />
-            </View>
-          ) : null}
-        </Card>
-
-        <View style={{ height: 12 }} />
+        
 
         {/* QR Code pour inviter le patient */}
         {qrCodeValue ? (
