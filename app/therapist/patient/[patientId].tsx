@@ -225,7 +225,7 @@ export default function TherapistPatientDetailScreen() {
 
       try {
         const { text } = await api.ai.ocr({
-          imageBase64: asset.base64,
+          imageBase64: asset.base64 ?? '',
           mimeType: asset.mimeType ?? 'image/jpeg',
         });
 
@@ -500,46 +500,53 @@ export default function TherapistPatientDetailScreen() {
       >
         <ThemedView style={styles.modalOverlay}>
           <Card style={styles.modalContent}>
-            <ThemedText type="defaultSemiBold" style={{ marginBottom: 12 }}>
-              Ajouter un constat / observation
-            </ThemedText>
-            <ThemedText style={{ fontSize: 12, opacity: 0.7, marginBottom: 8 }}>
-              Ce constat sera visible par le patient et différencié des constats générés par l'IA.
-            </ThemedText>
+            <ScrollView
+              style={{ maxHeight: '100%' }}
+              contentContainerStyle={{ paddingBottom: 12 }}
+              keyboardShouldPersistTaps="handled"
+            >
+              <ThemedText type="defaultSemiBold" style={{ marginBottom: 12 }}>
+                Ajouter un constat / observation
+              </ThemedText>
+              <ThemedText style={{ fontSize: 12, opacity: 0.7, marginBottom: 8 }}>
+                Ce constat sera visible par le patient et différencié des constats générés par l'IA.
+              </ThemedText>
 
-            <View style={{ marginBottom: 8 }}>
-              <Button
-                title={ocrLoading ? 'Lecture de la note…' : 'Scanner une note (Gemini)'}
-                variant="secondary"
-                onPress={handleScanReportWithGemini}
-                disabled={ocrLoading}
-              />
-            </View>
+              <View style={{ marginBottom: 8 }}>
+                <Button
+                  title={ocrLoading ? 'Lecture de la note…' : 'Scanner une note (Gemini)'}
+                  variant="secondary"
+                  onPress={handleScanReportWithGemini}
+                  disabled={ocrLoading}
+                />
+              </View>
 
-            <TextInput
-              placeholder="Votre constat ou observation..."
-              placeholderTextColor="#9BA1A6"
-              multiline
-              style={[styles.messageInput, { color: textColor }]}
-              value={reportText}
-              onChangeText={setReportText}
-            />
-            <View style={styles.modalActions}>
-              <Button
-                title="Annuler"
-                variant="ghost"
-                onPress={() => {
-                  setReportText('');
-                  setShowReportModal(false);
-                }}
+              <TextInput
+                placeholder="Votre constat ou observation..."
+                placeholderTextColor="#9BA1A6"
+                multiline
+                textAlignVertical="top"
+                style={[styles.messageInput, { color: textColor }]}
+                value={reportText}
+                onChangeText={setReportText}
               />
-              <Button
-                title={sendingReport ? 'Envoi...' : 'Ajouter'}
-                onPress={handleAddReport}
-                disabled={sendingReport || !reportText.trim()}
-                loading={sendingReport}
-              />
-            </View>
+              <View style={styles.modalActions}>
+                <Button
+                  title="Annuler"
+                  variant="ghost"
+                  onPress={() => {
+                    setReportText('');
+                    setShowReportModal(false);
+                  }}
+                />
+                <Button
+                  title={sendingReport ? 'Envoi...' : 'Ajouter'}
+                  onPress={handleAddReport}
+                  disabled={sendingReport || !reportText.trim()}
+                  loading={sendingReport}
+                />
+              </View>
+            </ScrollView>
           </Card>
         </ThemedView>
       </Modal>
