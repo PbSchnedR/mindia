@@ -372,6 +372,12 @@ export const api = {
         body: JSON.stringify({ messages }),
       });
     },
+    ocr: async (params: { imageBase64: string; mimeType?: string }): Promise<{ text: string }> => {
+      return apiRequest('/ai/ocr', {
+        method: 'POST',
+        body: JSON.stringify(params),
+      });
+    },
   },
 
   // Legacy - pour compatibilité avec le code existant

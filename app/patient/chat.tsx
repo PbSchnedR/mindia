@@ -1,5 +1,5 @@
 import { useRouter, useRootNavigationState } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, FlatList, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
@@ -20,6 +20,9 @@ export default function PatientChatScreen() {
   const router = useRouter();
   const rootNavState = useRootNavigationState();
   const bg = useThemeColor({}, 'background');
+  const listRef = useRef<FlatList<ChatMessage> | null>(null);
+  const didInitialScrollRef = useRef(false);
+  const shouldAutoScrollRef = useRef(true);
 
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
@@ -29,6 +32,20 @@ export default function PatientChatScreen() {
   const [sendStatus, setSendStatus] = useState<'idle' | 'sending' | 'waiting' | 'error'>('idle');
   const [sendError, setSendError] = useState<string | null>(null);
   const [backendOk, setBackendOk] = useState<boolean | null>(null);
+
+  const normalizeMessages = useCallback((raw: ChatMessage[] | null | undefined): ChatMessage[] => {
+    // On se contente de nettoyer sans réordonner : on fait confiance à l'ordre
+    // fourni par le backend / mock, qui a déjà le dernier message en dernier.
+    const list = Array.isArray(raw) ? raw.filter(Boolean) : [];
+    return list;
+  }, []);
+
+  const scrollToBottom = useCallback((animated: boolean) => {
+    // petit délai pour laisser le layout se stabiliser
+    requestAnimationFrame(() => {
+      listRef.current?.scrollToEnd({ animated });
+    });
+  }, []);
 
   useEffect(() => {
     if (sessionLoading) return;
@@ -47,11 +64,11 @@ export default function PatientChatScreen() {
         if (sessions.length > 0) {
           const latest = sessions[0];
           setChatId(latest.id);
-          setMessages(latest.messages);
+          setMessages(normalizeMessages(latest.messages));
         } else {
           const created = await startChatSession(session.patientId, session.therapistId);
           setChatId(created.id);
-          setMessages(created.messages);
+          setMessages(normalizeMessages(created.messages));
         }
       } catch (e) {
         console.error(e);
@@ -60,7 +77,17 @@ export default function PatientChatScreen() {
         setLoading(false);
       }
     })();
-  }, [session, sessionLoading, rootNavState?.key, router]);
+  }, [session, sessionLoading, rootNavState?.key, router, normalizeMessages]);
+
+  // À l’arrivée sur /chat, aller automatiquement au dernier message.
+  useEffect(() => {
+    if (loading) return;
+    if (didInitialScrollRef.current) return;
+    if (messages.length === 0) return;
+    didInitialScrollRef.current = true;
+    shouldAutoScrollRef.current = true;
+    scrollToBottom(false);
+  }, [loading, messages.length, scrollToBottom]);
 
   // Réponses mockées de l'IA (sera remplacé par vraie IA plus tard)
   const getMockAIResponse = (userMessage: string): string => {
@@ -124,6 +151,7 @@ export default function PatientChatScreen() {
     setSendError(null);
     setSendStatus('sending');
     setSending(true);
+    shouldAutoScrollRef.current = true;
     try {
       const optimistic: ChatMessage = {
         id: `temp_${Date.now().toString(16)}`,
@@ -131,11 +159,12 @@ export default function PatientChatScreen() {
         text: textToSend,
         createdAt: new Date().toISOString(),
       };
-      setMessages((prev) => [...prev, optimistic]);
+      setMessages((prev) => normalizeMessages([...prev, optimistic]));
+      scrollToBottom(true);
 
       // Envoyer le message du patient
       const updated = await appendMessage(chatId, 'patient', textToSend);
-      setMessages(updated.messages);
+      setMessages(normalizeMessages(updated.messages));
       
       const userMessage = textToSend;
       setCurrentText('');
@@ -162,7 +191,7 @@ export default function PatientChatScreen() {
       }
 
       const auto = await appendMessage(chatId, 'ai', aiResponse);
-      setMessages(auto.messages);
+      setMessages(normalizeMessages(auto.messages));
       setSendStatus('idle');
     } catch (e) {
       console.error(e);
@@ -225,11 +254,25 @@ export default function PatientChatScreen() {
         </View>
 
         <FlatList
+          ref={(r) => {
+            listRef.current = r;
+          }}
           data={messages}
           keyExtractor={(m) => m.id}
           renderItem={renderMessage}
           contentContainerStyle={styles.messages}
           style={{ flex: 1 }}
+          onContentSizeChange={() => {
+            if (shouldAutoScrollRef.current) scrollToBottom(false);
+          }}
+          onScroll={({ nativeEvent }) => {
+            // Si l'utilisateur remonte, on évite de le "forcer" vers le bas.
+            const { layoutMeasurement, contentOffset, contentSize } = nativeEvent;
+            const distanceFromBottom =
+              contentSize.height - (layoutMeasurement.height + contentOffset.y);
+            shouldAutoScrollRef.current = distanceFromBottom < 80;
+          }}
+          scrollEventThrottle={16}
         />
 
 

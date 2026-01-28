@@ -1,6 +1,7 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
 import { ScrollView, StyleSheet, View, TextInput, Modal, Alert } from 'react-native';
+import * as ImagePicker from 'expo-image-picker';
 import { useThemeColor } from '@/hooks/use-theme-color';
 import { Colors } from '@/constants/theme';
 
@@ -46,6 +47,7 @@ export default function TherapistPatientDetailScreen() {
   const [showReportModal, setShowReportModal] = useState(false);
   const [reportText, setReportText] = useState('');
   const [sendingReport, setSendingReport] = useState(false);
+  const [ocrLoading, setOcrLoading] = useState(false);
 
   useEffect(() => {
     const raw = params.patientId;
@@ -197,6 +199,55 @@ export default function TherapistPatientDetailScreen() {
       Alert.alert('Erreur', 'Impossible d\'ajouter le constat. Réessayez plus tard.');
     } finally {
       setSendingReport(false);
+    }
+  };
+
+  const handleScanReportWithGemini = async () => {
+    try {
+      // Demander l'accès à la caméra/galerie
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission refusée', 'La caméra est nécessaire pour scanner une note.');
+        return;
+      }
+
+      const result = await ImagePicker.launchCameraAsync({
+        base64: true,
+        quality: 0.6,
+      });
+
+      if (result.canceled || !result.assets || !result.assets[0]?.base64) {
+        return;
+      }
+
+      const asset = result.assets[0];
+      setOcrLoading(true);
+
+      try {
+        const { text } = await api.ai.ocr({
+          imageBase64: asset.base64,
+          mimeType: asset.mimeType ?? 'image/jpeg',
+        });
+
+        if (!text) {
+          Alert.alert('Gemini', 'Aucun texte lisible n’a été détecté.');
+          return;
+        }
+
+        // Pré-remplir le champ du constat (en conservant éventuellement le texte déjà saisi)
+        setReportText((current) => (current ? `${current}\n\n${text}` : text));
+      } catch (error) {
+        console.error('Erreur OCR Gemini:', error);
+        Alert.alert(
+          'Erreur',
+          'Impossible de lire la photo avec Gemini. Vérifiez votre connexion et réessayez.'
+        );
+      } finally {
+        setOcrLoading(false);
+      }
+    } catch (e) {
+      console.error('Erreur ImagePicker / Gemini:', e);
+      Alert.alert('Erreur', 'Un problème est survenu lors de la prise de photo.');
     }
   };
 
@@ -455,6 +506,16 @@ export default function TherapistPatientDetailScreen() {
             <ThemedText style={{ fontSize: 12, opacity: 0.7, marginBottom: 8 }}>
               Ce constat sera visible par le patient et différencié des constats générés par l'IA.
             </ThemedText>
+
+            <View style={{ marginBottom: 8 }}>
+              <Button
+                title={ocrLoading ? 'Lecture de la note…' : 'Scanner une note (Gemini)'}
+                variant="secondary"
+                onPress={handleScanReportWithGemini}
+                disabled={ocrLoading}
+              />
+            </View>
+
             <TextInput
               placeholder="Votre constat ou observation..."
               placeholderTextColor="#9BA1A6"
