@@ -1,11 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Image } from 'expo-image';
-import { StyleSheet, View, Modal, Alert, Platform, ActivityIndicator, TextInput, Text, ScrollView } from 'react-native';
+import { StyleSheet, View, Modal, Alert, Platform, ActivityIndicator, TextInput, Text, ScrollView, Animated, Pressable, StatusBar } from 'react-native';
 import { Link, useRouter } from 'expo-router';
 
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { QRScanner } from '@/components/qr-scanner';
 import { api } from '@/lib/api';
@@ -21,6 +18,12 @@ export default function LandingScreen() {
   const [checkingSession, setCheckingSession] = useState(true);
   const [debugEmail, setDebugEmail] = useState('');
   const [debugLoading, setDebugLoading] = useState(false);
+  const [userType, setUserType] = useState<'patient' | 'therapist'>('patient');
+  const [therapistEmail, setTherapistEmail] = useState('camille@cabinet-demo.fr');
+  const [therapistPassword, setTherapistPassword] = useState('demo1234');
+  const [therapistLoading, setTherapistLoading] = useState(false);
+  const toggleAnimation = useRef(new Animated.Value(0)).current;
+  const [toggleWidth, setToggleWidth] = useState(0);
 
   // Vérifier s'il y a déjà une session valide au démarrage
   useEffect(() => {
@@ -130,44 +133,116 @@ export default function LandingScreen() {
     }
   }
 
+  async function handleTherapistLogin() {
+    if (!therapistEmail.trim() || !therapistPassword.trim()) {
+      Alert.alert('Champs requis', 'Veuillez remplir l\'email et le mot de passe.');
+      return;
+    }
+
+    try {
+      setTherapistLoading(true);
+      const backendReady = await api.waitForBackend();
+      if (!backendReady) {
+        Alert.alert('Erreur', 'Le serveur n\'est pas disponible. Réessayez plus tard.');
+        return;
+      }
+
+      const result = await api.auth.login(therapistEmail.trim(), therapistPassword);
+      await saveSession(result.session);
+      setSession(result.session);
+      router.replace('/therapist/dashboard');
+    } catch (error: any) {
+      console.error('[Therapist Login] Erreur:', error);
+      Alert.alert('Connexion impossible', error?.message || 'Email ou mot de passe invalide.');
+    } finally {
+      setTherapistLoading(false);
+    }
+  }
+
+  function switchUserType(type: 'patient' | 'therapist') {
+    setUserType(type);
+    Animated.spring(toggleAnimation, {
+      toValue: type === 'therapist' ? 1 : 0,
+      useNativeDriver: true,
+      damping: 15,
+      stiffness: 150,
+    }).start();
+  }
+
   // Écran de chargement pendant la vérification de session
   if (checkingSession) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#EC4899" />
-        <ThemedText style={styles.loadingText}>Chargement...</ThemedText>
+        <Text style={styles.loadingText}>Chargement...</Text>
       </View>
     );
   }
 
+  const translateX = toggleAnimation.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, toggleWidth ? (toggleWidth - 8) / 2 : 0], // Largeur / 2 moins le padding
+  });
+
   return (
     <>
-      <ThemedView style={styles.page}>
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+      <View style={styles.page}>
         <ScrollView contentContainerStyle={styles.scrollContent}>
-          <ThemedView style={styles.titleContainer}>
-            <View style={styles.brandBlock}>
-              <Image source={require('@/assets/images/logo-mindia.png')} style={styles.logoTop} />
-              <Text style={styles.appTitle}>
-                <Text style={styles.appTitleBase}>Mind</Text>
-                <Text style={styles.appTitleAccent}>IA</Text>
-              </Text>
-            </View>
-            <View style={styles.separator} />
-            <View style={styles.taglineBlock}>
-              <ThemedText style={styles.heroTitle}>Relai entre les seances</ThemedText>
-              <ThemedText style={styles.heroSubtitle}>
-                Une bulle de parole continue entre les séances, pour les patients et les thérapeutes. MVP centré
-                sur les moments de down.
-              </ThemedText>
-            </View>
-          </ThemedView>
+          {/* Logo et titre */}
+          <View style={styles.header}>
+            <Image source={require('@/assets/images/logo-mindia.png')} style={styles.logo} />
+            <Text style={styles.title}>
+              <Text style={styles.titleBase}>Mind</Text>
+              <Text style={styles.titleAccent}>IA</Text>
+            </Text>
+            <Text style={styles.subtitle}>Relai entre les séances</Text>
+          </View>
 
-          <View style={styles.cardsRow}>
-            <Card style={styles.card}>
-              <ThemedText type="subtitle">Espace patient</ThemedText>
-              <ThemedText style={styles.cardText}>
-                Rejoins ta bulle sécurisée en scannant le QR code donné par ton thérapeute. Disponible 24h/24.
-              </ThemedText>
+          {/* Toggle Patient/Thérapeute avec animation */}
+          <View style={styles.toggleContainer}>
+            <View 
+              style={styles.toggle}
+              onLayout={(event) => {
+                const { width } = event.nativeEvent.layout;
+                setToggleWidth(width);
+              }}
+            >
+              <Animated.View 
+                style={[
+                  styles.toggleSlider,
+                  { transform: [{ translateX }] }
+                ]}
+              />
+              <Pressable 
+                style={styles.toggleButton}
+                onPress={() => switchUserType('patient')}
+              >
+                <Text style={[
+                  styles.toggleText,
+                  userType === 'patient' && styles.toggleTextActive
+                ]}>Patient</Text>
+              </Pressable>
+              <Pressable 
+                style={styles.toggleButton}
+                onPress={() => switchUserType('therapist')}
+              >
+                <Text style={[
+                  styles.toggleText,
+                  userType === 'therapist' && styles.toggleTextActive
+                ]}>Thérapeute</Text>
+              </Pressable>
+            </View>
+          </View>
+
+          {/* Contenu selon le type d'utilisateur */}
+          {userType === 'patient' ? (
+            <View style={styles.formContainer}>
+              <Text style={styles.formTitle}>Accéder à ma bulle</Text>
+              <Text style={styles.formSubtitle}>
+                Scanne le QR code fourni par ton thérapeute pour accéder à ton espace sécurisé
+              </Text>
+              
               {Platform.OS === 'web' ? (
                 <Link href="/patient" asChild>
                   <Button title="Entrer avec mon code" />
@@ -179,32 +254,64 @@ export default function LandingScreen() {
                   disabled={isLoading}
                 />
               )}
-            </Card>
-          </View>
 
-          <View style={styles.cardsRow}>
-            <Card style={styles.cardAlt}>
-              <ThemedText type="subtitle">Accès debug patient</ThemedText>
-              <ThemedText style={styles.cardText}>
-                Accès temporaire sans QR code. Entre l'email patient pour tester la bulle.
-              </ThemedText>
-              <Button title="Accès debug" variant="secondary" onPress={() => setShowDebugPatient(true)} />
-            </Card>
-          </View>
+              <View style={styles.divider}>
+                <View style={styles.dividerLine} />
+                <Text style={styles.dividerText}>ou</Text>
+                <View style={styles.dividerLine} />
+              </View>
 
-          <View style={styles.cardsRow}>
-            <Card style={styles.card}>
-              <ThemedText type="subtitle">Espace thérapeute</ThemedText>
-              <ThemedText style={styles.cardText}>
-                Visualise les moments-clés entre deux séances, sans remplacer la relation humaine.
-              </ThemedText>
+              <Button 
+                title="Accès debug (test)" 
+                variant="secondary" 
+                onPress={() => setShowDebugPatient(true)} 
+              />
+            </View>
+          ) : (
+            <View style={styles.formContainer}>
+              <Text style={styles.formTitle}>Connexion Thérapeute</Text>
+              <Text style={styles.formSubtitle}>
+                Connecte-toi pour accéder au suivi de tes patients
+              </Text>
+
+              <View style={styles.inputContainer}>
+                <Text style={styles.inputLabel}>Email</Text>
+                <TextInput
+                  value={therapistEmail}
+                  onChangeText={setTherapistEmail}
+                  placeholder="votre.email@exemple.com"
+                  placeholderTextColor="#94A3B8"
+                  autoCapitalize="none"
+                  keyboardType="email-address"
+                  style={styles.input}
+                />
+              </View>
+
+              <View style={styles.inputContainer}>
+                <Text style={styles.inputLabel}>Mot de passe</Text>
+                <TextInput
+                  value={therapistPassword}
+                  onChangeText={setTherapistPassword}
+                  placeholder="••••••••"
+                  placeholderTextColor="#94A3B8"
+                  secureTextEntry
+                  style={styles.input}
+                />
+              </View>
+
+              <Button
+                title={therapistLoading ? 'Connexion...' : 'Se connecter'}
+                onPress={handleTherapistLogin}
+                disabled={therapistLoading}
+              />
+
               <Link href="/therapist" asChild>
-                <Button title="Espace thérapeute" variant="secondary" />
+                <Text style={styles.forgotPassword}>Mot de passe oublié ?</Text>
               </Link>
-            </Card>
-          </View>
+            </View>
+          )}
         </ScrollView>
-      </ThemedView>
+      </View>
 
       {/* Modal Scanner QR */}
       <Modal
@@ -224,138 +331,214 @@ export default function LandingScreen() {
         animationType="slide"
         onRequestClose={() => setShowDebugPatient(false)}
       >
-        <ThemedView style={styles.debugContainer}>
-          <ThemedText type="title">Accès debug patient</ThemedText>
-          <ThemedText style={styles.debugText}>
-            Renseigne un email patient valide pour entrer directement dans la bulle.
-          </ThemedText>
-          <TextInput
-            value={debugEmail}
-            onChangeText={setDebugEmail}
-            placeholder="Email patient"
-            placeholderTextColor="#94A3B8"
-            autoCapitalize="none"
-            keyboardType="email-address"
-            style={styles.debugInput}
-          />
-          <Button
-            title={debugLoading ? 'Connexion...' : 'Connexion debug'}
-            onPress={handleDebugPatientAccess}
-            disabled={debugLoading}
-          />
-          <Button
-            title="Retour"
-            variant="secondary"
-            onPress={() => setShowDebugPatient(false)}
-            style={{ marginTop: 12 }}
-          />
-        </ThemedView>
+        <View style={styles.debugModal}>
+          <ScrollView contentContainerStyle={styles.debugScrollContent}>
+            <Text style={styles.debugTitle}>Accès debug patient</Text>
+            <Text style={styles.debugDescription}>
+              Renseigne un email patient valide pour entrer directement dans la bulle.
+            </Text>
+            <View style={styles.inputContainer}>
+              <Text style={styles.inputLabel}>Email patient</Text>
+              <TextInput
+                value={debugEmail}
+                onChangeText={setDebugEmail}
+                placeholder="patient@exemple.com"
+                placeholderTextColor="#94A3B8"
+                autoCapitalize="none"
+                keyboardType="email-address"
+                style={styles.input}
+              />
+            </View>
+            <Button
+              title={debugLoading ? 'Connexion...' : 'Connexion debug'}
+              onPress={handleDebugPatientAccess}
+              disabled={debugLoading}
+            />
+            <Button
+              title="Annuler"
+              variant="secondary"
+              onPress={() => setShowDebugPatient(false)}
+              style={{ marginTop: 12 }}
+            />
+          </ScrollView>
+        </View>
       </Modal>
     </>
   );
 }
-
 const styles = StyleSheet.create({
   page: {
     flex: 1,
+    backgroundColor: '#FFFFFF',
   },
   scrollContent: {
-    padding: 28,
-    gap: 16,
+    flexGrow: 1,
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+    paddingVertical: 40,
+    maxWidth: 440,
+    width: '100%',
+    alignSelf: 'center',
   },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#020617',
+    backgroundColor: '#FFFFFF',
   },
   loadingText: {
     marginTop: 16,
-    color: '#9CA3AF',
+    color: '#64748B',
+    fontSize: 15,
   },
-  titleContainer: {
-    gap: 18,
-    marginBottom: 28,
+  header: {
     alignItems: 'center',
+    marginBottom: 32,
+  },
+  logo: {
+    width: 80,
+    height: 80,
+    marginBottom: 16,
+  },
+  title: {
+    fontSize: 32,
+    fontWeight: '700',
+    marginBottom: 8,
+  },
+  titleBase: {
+    color: '#1E293B',
+  },
+  titleAccent: {
+    color: '#2563EB',
+  },
+  subtitle: {
+    fontSize: 14,
+    color: '#64748B',
+    fontWeight: '500',
+  },
+  toggleContainer: {
+    marginBottom: 32,
     paddingHorizontal: 8,
   },
-  brandBlock: {
-    alignItems: 'center',
-    gap: 12,
-    paddingTop: 6,
+  toggle: {
+    position: 'relative',
+    flexDirection: 'row',
+    backgroundColor: '#F1F5F9',
+    borderRadius: 12,
+    padding: 4,
   },
-  logoTop: {
-    width: 120,
-    height: 120,
-    borderRadius: 0,
+  toggleSlider: {
+    position: 'absolute',
+    left: 4,
+    top: 4,
+    bottom: 4,
+    width: '48%',
+    backgroundColor: '#2563EB',
+    borderRadius: 8,
+    shadowColor: '#2563EB',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3,
   },
-  appTitle: {
-    fontSize: 30,
-    fontWeight: '800',
-    letterSpacing: 0.6,
-    textAlign: 'center',
-  },
-  appTitleBase: {
-    color: '#E2E8F0',
-  },
-  appTitleAccent: {
-    color: '#22D3EE',
-  },
-  separator: {
-    width: '70%',
-    height: 1,
-    backgroundColor: 'rgba(226, 232, 240, 0.2)',
-  },
-  taglineBlock: {
-    alignItems: 'center',
-    gap: 8,
-    paddingBottom: 6,
-  },
-  heroTitle: {
-    fontSize: 24,
-    lineHeight: 30,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  heroSubtitle: {
-    fontSize: 15,
-    lineHeight: 22,
-    opacity: 0.8,
-    textAlign: 'center',
-  },
-  cardsRow: {
-    marginTop: 8,
-    marginBottom: 12,
-  },
-  card: {
-    gap: 12,
-  },
-  cardAlt: {
-    gap: 12,
-    borderWidth: 1,
-    borderColor: 'rgba(236, 72, 153, 0.2)',
-    backgroundColor: 'rgba(236, 72, 153, 0.05)',
-  },
-  cardText: {
-    fontSize: 14,
-    opacity: 0.8,
-  },
-  debugContainer: {
+  toggleButton: {
     flex: 1,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    alignItems: 'center',
     justifyContent: 'center',
-    padding: 24,
-    gap: 16,
+    zIndex: 1,
   },
-  debugText: {
-    opacity: 0.7,
+  toggleText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#64748B',
   },
-  debugInput: {
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
+  toggleTextActive: {
+    color: '#FFFFFF',
+  },
+  formContainer: {
+    gap: 20,
+    paddingHorizontal: 8,
+  },
+  formTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#1E293B',
+    textAlign: 'center',
+  },
+  formSubtitle: {
+    fontSize: 14,
+    color: '#64748B',
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 4,
+  },
+  inputContainer: {
+    gap: 8,
+  },
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  input: {
     backgroundColor: '#F8FAFC',
     borderRadius: 12,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
     fontSize: 15,
+    color: '#1E293B',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  divider: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 4,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#E2E8F0',
+  },
+  dividerText: {
+    paddingHorizontal: 12,
+    fontSize: 13,
+    color: '#94A3B8',
+  },
+  forgotPassword: {
+    fontSize: 14,
+    color: '#2563EB',
+    textAlign: 'center',
+    marginTop: 4,
+    fontWeight: '600',
+  },
+  debugModal: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+  },
+  debugScrollContent: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    padding: 24,
+    gap: 20,
+    maxWidth: 440,
+    width: '100%',
+    alignSelf: 'center',
+  },
+  debugTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#1E293B',
+    textAlign: 'center',
+  },
+  debugDescription: {
+    fontSize: 14,
+    color: '#64748B',
+    textAlign: 'center',
+    lineHeight: 20,
   },
 });
+

@@ -1,13 +1,9 @@
-import { Link, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, View, Text, Modal, TextInput, Alert } from 'react-native';
+import { FlatList, Pressable, StyleSheet, View, Text, Modal, TextInput, Alert, StatusBar } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
-import { SeverityBadge } from '@/components/ui/badge';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { useThemeColor } from '@/hooks/use-theme-color';
 import { listChatSessionsForTherapist } from '@/lib/chat';
 import { useSession } from '@/lib/session-context';
 import { getTherapistById, listPatientsForTherapist } from '@/lib/people';
@@ -28,9 +24,6 @@ export default function TherapistDashboardScreen() {
   const [menuOpen, setMenuOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const burgerColor = useThemeColor({}, 'text');
-  const bg = useThemeColor({}, 'background');
-  const textColor = useThemeColor({}, 'text');
   
   // État pour le modal de création de patient
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -40,19 +33,15 @@ export default function TherapistDashboardScreen() {
   const [createError, setCreateError] = useState<string | null>(null);
 
   useEffect(() => {
-    // Attendre que la session soit chargée
     if (sessionLoading) return;
     
-    // Rediriger si pas de session (mais seulement après le chargement)
     if (!session || session.role !== 'therapist') {
-      // Utiliser setTimeout pour éviter l'erreur de navigation avant le montage
       const timeout = setTimeout(() => {
         router.replace('/therapist');
       }, 0);
       return () => clearTimeout(timeout);
     }
     
-    // Charger les données uniquement si on a une session valide
     void (async () => {
       setLoading(true);
       setError(null);
@@ -64,9 +53,7 @@ export default function TherapistDashboardScreen() {
         await loadPatients();
       } catch (err: any) {
         console.error('Erreur chargement dashboard:', err);
-        // Vérifier si c'est une erreur d'authentification
         if (err?.status === 401 || err?.message?.toLowerCase().includes('token')) {
-          // Token invalide, rediriger vers la page de connexion
           await handleSignOut();
         } else {
           setError('Une erreur est survenue. Vérifiez votre connexion et réessayez.');
@@ -144,12 +131,10 @@ export default function TherapistDashboardScreen() {
         email: newPatientEmail.trim().toLowerCase(),
       });
       
-      // Réinitialiser le formulaire
       setNewPatientUsername('');
       setNewPatientEmail('');
       setShowCreateModal(false);
       
-      // Recharger la liste des patients
       await loadPatients();
       
       Alert.alert('Succès', 'Patient créé avec succès');
@@ -160,271 +145,428 @@ export default function TherapistDashboardScreen() {
     }
   };
 
+  const getMoodIcon = (severity?: number) => {
+    if (severity === 1) return { emoji: '😊', color: '#10B981', label: 'Bien' };
+    if (severity === 2) return { emoji: '😟', color: '#F59E0B', label: 'Difficile' };
+    if (severity === 3) return { emoji: '😰', color: '#EF4444', label: 'Urgence' };
+    return { emoji: '😐', color: '#94A3B8', label: 'Non renseigné' };
+  };
+
   const renderPatient = ({ item }: { item: PatientRow }) => {
+    const mood = getMoodIcon(item.lastSeverity);
+    
     return (
       <Pressable
         onPress={() => {
           router.push(`/therapist/patient/${item.id}`);
-        }}>
-        <Card style={styles.patientCard}>
-          <View style={styles.patientHeader}>
-            <ThemedText type="defaultSemiBold">
+        }}
+        style={styles.patientCard}
+      >
+        <View style={styles.patientHeader}>
+          <View style={styles.patientInfo}>
+            <Text style={styles.patientName}>
               {item.firstName} {item.lastName}
-            </ThemedText>
-            <SeverityBadge severity={item.lastSeverity as any} />
+            </Text>
+            <Text style={styles.patientMeta}>
+              {item.therapyTopic ?? 'Sujet non renseigné'} · {item.sessionsDone ?? 0} séances
+            </Text>
           </View>
-          <ThemedText style={styles.patientMeta}>
-            {item.therapyTopic ?? 'Sujet non renseigné'} · {item.sessionsDone ?? 0} séances suivies
-          </ThemedText>
-          {item.lastSummary ? (
-            <ThemedText style={styles.lastSummary}>
-              Dernière remontée: {item.lastSummary}
-            </ThemedText>
-          ) : (
-            <ThemedText style={styles.lastSummaryEmpty}>Aucune remontée via la bulle pour l’instant.</ThemedText>
-          )}
-        </Card>
+          <View style={[styles.moodBadge, { backgroundColor: `${mood.color}20` }]}>
+            <Text style={styles.moodEmoji}>{mood.emoji}</Text>
+          </View>
+        </View>
+        
+        {item.lastSummary ? (
+          <Text style={styles.lastSummary} numberOfLines={2}>
+            {item.lastSummary}
+          </Text>
+        ) : (
+          <Text style={styles.lastSummaryEmpty}>
+            Aucune remontée de la bulle pour l'instant
+          </Text>
+        )}
       </Pressable>
     );
   };
 
-  // Afficher un loader pendant le chargement de la session
   if (sessionLoading || loading) {
     return (
-      <ThemedView style={[styles.container, styles.centerContent]}>
-        <ThemedText>Chargement...</ThemedText>
-      </ThemedView>
+      <View style={[styles.container, styles.centerContent]}>
+        <Text style={styles.loadingText}>Chargement...</Text>
+      </View>
     );
   }
 
-  // Afficher une erreur si l'API n'est pas accessible
   if (error) {
     return (
-      <ThemedView style={[styles.container, styles.centerContent]}>
-        <Card style={styles.errorCard}>
-          <ThemedText type="subtitle" style={styles.errorTitle}>Oups !</ThemedText>
-          <ThemedText style={styles.errorMessage}>{error}</ThemedText>
+      <View style={[styles.container, styles.centerContent]}>
+        <View style={styles.errorCard}>
+          <Text style={styles.errorTitle}>Oups !</Text>
+          <Text style={styles.errorMessage}>{error}</Text>
           <Button title="Réessayer" onPress={handleRetry} style={{ marginTop: 16 }} />
           <Button title="Se déconnecter" variant="secondary" onPress={handleSignOut} style={{ marginTop: 8 }} />
-        </Card>
-      </ThemedView>
+        </View>
+      </View>
     );
   }
 
   return (
-    <ThemedView style={styles.container}>
-      <View style={styles.header}>
-        <View style={{ flex: 1, gap: 6 }}>
-          <ThemedText type="subtitle">Espace thérapeute</ThemedText>
-          <ThemedText>
-            {therapistName ? `Bonjour ${therapistName}` : 'Bonjour'} — voici les patients liés à votre bulle.
-          </ThemedText>
-        </View>
-        <View style={styles.menuWrapper}>
-          <Pressable onPress={() => setMenuOpen((v) => !v)} hitSlop={10}>
-            <Text style={[styles.burger, { color: burgerColor }]}>☰</Text>
+    <>
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+      <View style={styles.container}>
+        {/* Header */}
+        <View style={styles.header}>
+          <View style={styles.headerContent}>
+            <Text style={styles.headerTitle}>Mes Patients</Text>
+            <Text style={styles.headerSubtitle}>
+              Bonjour {therapistName || 'Docteur'}
+            </Text>
+          </View>
+          <Pressable onPress={() => setMenuOpen(!menuOpen)} hitSlop={10} style={styles.menuButton}>
+            <Ionicons name={menuOpen ? "close" : "menu"} size={28} color="#1E293B" />
           </Pressable>
-          {menuOpen && (
-            <Card style={styles.menuCard}>
-              <ThemedText type="defaultSemiBold">Menu</ThemedText>
-              <Button title="Mes infos (bientôt)" variant="ghost" onPress={() => setMenuOpen(false)} />
-              <Button title="Paramètres (bientôt)" variant="ghost" onPress={() => setMenuOpen(false)} />
-              <Button title="Déconnexion" variant="danger" onPress={handleSignOut} />
-            </Card>
-          )}
         </View>
-      </View>
 
-      <Button 
-        title="+ Ajouter un patient" 
-        onPress={() => setShowCreateModal(true)}
-        style={{ marginTop: 8 }}
-      />
-
-      <FlatList
-        data={patients}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.listContent}
-        ItemSeparatorComponent={() => <View style={{ height: 10 }} />}
-        renderItem={renderPatient}
-        ListEmptyComponent={() => (
-          <Card style={styles.emptyCard}>
-            <ThemedText style={styles.emptyText}>
-              Aucun patient pour l'instant. Ajoutez votre premier patient !
-            </ThemedText>
-          </Card>
+        {menuOpen && (
+          <View style={styles.menuCard}>
+            <Pressable style={styles.menuItem} onPress={handleSignOut}>
+              <Ionicons name="log-out-outline" size={20} color="#EF4444" />
+              <Text style={styles.menuItemTextDanger}>Déconnexion</Text>
+            </Pressable>
+          </View>
         )}
-      />
 
-      {/* Modal de création de patient */}
-      <Modal
-        visible={showCreateModal}
-        transparent
-        animationType="fade"
-        onRequestClose={() => setShowCreateModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: bg }]}>
-            <ThemedText type="subtitle" style={styles.modalTitle}>
-              Nouveau patient
-            </ThemedText>
+        {/* Bouton ajouter patient */}
+        <View style={styles.actionButtonContainer}>
+          <Pressable 
+            style={styles.addButton}
+            onPress={() => setShowCreateModal(true)}
+          >
+            <Ionicons name="add-circle" size={24} color="#2563EB" />
+            <Text style={styles.addButtonText}>Ajouter un patient</Text>
+          </Pressable>
+        </View>
+
+        {/* Liste des patients */}
+        <FlatList
+          data={patients}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.listContent}
+          ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
+          renderItem={renderPatient}
+          ListEmptyComponent={() => (
+            <View style={styles.emptyState}>
+              <Ionicons name="people-outline" size={64} color="#CBD5E1" />
+              <Text style={styles.emptyText}>Aucun patient pour l'instant</Text>
+              <Text style={styles.emptySubtext}>
+                Ajoutez votre premier patient pour commencer le suivi
+              </Text>
+            </View>
+          )}
+        />
+
+        {/* Modal de création de patient */}
+        <Modal
+          visible={showCreateModal}
+          animationType="slide"
+          onRequestClose={() => setShowCreateModal(false)}
+        >
+          <View style={styles.modalContainer}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Nouveau patient</Text>
+              <Pressable onPress={() => setShowCreateModal(false)} hitSlop={10}>
+                <Ionicons name="close" size={28} color="#1E293B" />
+              </Pressable>
+            </View>
             
-            <TextInput
-              placeholder="Nom d'utilisateur"
-              placeholderTextColor="#9BA1A6"
-              value={newPatientUsername}
-              onChangeText={setNewPatientUsername}
-              style={[styles.input, { color: '#11181C' }]}
-              autoCapitalize="none"
-            />
-            
-            <TextInput
-              placeholder="Email"
-              placeholderTextColor="#9BA1A6"
-              value={newPatientEmail}
-              onChangeText={setNewPatientEmail}
-              style={[styles.input, { color: '#11181C' }]}
-              keyboardType="email-address"
-              autoCapitalize="none"
-            />
+            <View style={styles.modalContent}>
+              <View style={styles.inputContainer}>
+                <Text style={styles.inputLabel}>Nom d'utilisateur</Text>
+                <TextInput
+                  placeholder="Ex: Jean Dupont"
+                  placeholderTextColor="#94A3B8"
+                  value={newPatientUsername}
+                  onChangeText={setNewPatientUsername}
+                  style={styles.input}
+                  autoCapitalize="words"
+                />
+              </View>
+              
+              <View style={styles.inputContainer}>
+                <Text style={styles.inputLabel}>Email</Text>
+                <TextInput
+                  placeholder="jean.dupont@exemple.com"
+                  placeholderTextColor="#94A3B8"
+                  value={newPatientEmail}
+                  onChangeText={setNewPatientEmail}
+                  style={styles.input}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                />
+              </View>
 
-            {createError && (
-              <ThemedText style={styles.errorText}>{createError}</ThemedText>
-            )}
+              {createError && (
+                <Text style={styles.errorText}>{createError}</Text>
+              )}
+            </View>
 
-            <View style={styles.modalButtons}>
+            <View style={styles.modalFooter}>
               <Button 
                 title="Annuler" 
                 variant="secondary" 
                 onPress={() => {
                   setShowCreateModal(false);
                   setCreateError(null);
+                  setNewPatientUsername('');
+                  setNewPatientEmail('');
                 }}
               />
               <Button 
                 title="Créer" 
                 onPress={handleCreatePatient}
                 loading={creating}
+                disabled={!newPatientUsername.trim() || !newPatientEmail.trim()}
               />
             </View>
           </View>
-        </View>
-      </Modal>
-    </ThemedView>
+        </Modal>
+      </View>
+    </>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 16,
-    gap: 12,
+    backgroundColor: '#FFFFFF',
   },
   centerContent: {
     justifyContent: 'center',
     alignItems: 'center',
+    padding: 20,
   },
-  errorCard: {
-    padding: 24,
-    alignItems: 'center',
-    maxWidth: 350,
-    width: '100%',
-  },
-  errorTitle: {
-    marginBottom: 8,
-    color: '#EF4444',
-  },
-  errorMessage: {
-    textAlign: 'center',
-    opacity: 0.8,
+  loadingText: {
+    fontSize: 16,
+    color: '#64748B',
   },
   header: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    zIndex: 20,
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
   },
-  listContent: {
-    paddingTop: 12,
-    paddingBottom: 20,
+  headerContent: {
+    flex: 1,
   },
-  menuWrapper: {
-    position: 'relative',
-  },
-  burger: {
-    fontSize: 22,
+  headerTitle: {
+    fontSize: 28,
     fontWeight: '700',
-    color: '#FFFFFF',
+    color: '#1E293B',
+  },
+  headerSubtitle: {
+    fontSize: 15,
+    color: '#64748B',
+    marginTop: 4,
+  },
+  menuButton: {
+    padding: 4,
   },
   menuCard: {
-    position: 'absolute',
-    top: 32,
-    right: 0,
-    width: 200,
-    gap: 6,
-    zIndex: 30,
-    elevation: 8,
+    backgroundColor: '#FFFFFF',
+    marginHorizontal: 20,
+    marginTop: 8,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 16,
+  },
+  menuItemTextDanger: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#EF4444',
+  },
+  actionButtonContainer: {
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 12,
+  },
+  addButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: '#EFF6FF',
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#DBEAFE',
+  },
+  addButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#2563EB',
+  },
+  listContent: {
+    paddingHorizontal: 20,
+    paddingBottom: 20,
   },
   patientCard: {
-    gap: 6,
+    backgroundColor: '#F8FAFC',
+    borderRadius: 16,
+    padding: 16,
+    gap: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
   },
   patientHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
+  },
+  patientInfo: {
+    flex: 1,
+    gap: 4,
+  },
+  patientName: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#1E293B',
   },
   patientMeta: {
     fontSize: 13,
-    opacity: 0.9,
+    color: '#64748B',
+  },
+  moodBadge: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  moodEmoji: {
+    fontSize: 24,
   },
   lastSummary: {
-    fontSize: 13,
-    opacity: 0.9,
+    fontSize: 14,
+    color: '#475569',
+    lineHeight: 20,
   },
   lastSummaryEmpty: {
     fontSize: 13,
-    opacity: 0.6,
+    color: '#94A3B8',
     fontStyle: 'italic',
   },
-  emptyCard: {
-    padding: 20,
+  emptyState: {
     alignItems: 'center',
+    paddingVertical: 60,
+    paddingHorizontal: 40,
   },
   emptyText: {
-    textAlign: 'center',
-    opacity: 0.7,
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  modalContent: {
-    width: '100%',
-    maxWidth: 400,
-    borderRadius: 16,
-    padding: 20,
-    gap: 16,
-  },
-  modalTitle: {
-    textAlign: 'center',
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#64748B',
+    marginTop: 20,
     marginBottom: 8,
   },
-  input: {
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 16,
-    backgroundColor: '#F9FAFB',
+  emptySubtext: {
+    fontSize: 14,
+    color: '#94A3B8',
+    textAlign: 'center',
+    lineHeight: 20,
   },
-  modalButtons: {
+  
+  // Modal
+  modalContainer: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 16,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F1F5F9',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  modalContent: {
+    flex: 1,
+    padding: 20,
+    gap: 20,
+  },
+  inputContainer: {
+    gap: 8,
+  },
+  inputLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#475569',
+  },
+  input: {
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    fontSize: 15,
+    color: '#1E293B',
+  },
+  modalFooter: {
     flexDirection: 'row',
     gap: 12,
-    marginTop: 8,
+    padding: 20,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+  },
+  
+  // Error
+  errorCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    padding: 24,
+    alignItems: 'center',
+    maxWidth: 350,
+    width: '100%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 5,
+  },
+  errorTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#EF4444',
+    marginBottom: 8,
+  },
+  errorMessage: {
+    fontSize: 14,
+    color: '#64748B',
+    textAlign: 'center',
+    marginBottom: 16,
   },
   errorText: {
     color: '#EF4444',
@@ -432,4 +574,3 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 });
-

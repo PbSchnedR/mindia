@@ -1,8 +1,6 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, type PressableProps, ActivityIndicator } from 'react-native';
 
-import { useThemeColor } from '@/hooks/use-theme-color';
-
 type Variant = 'primary' | 'secondary' | 'danger' | 'ghost';
 
 export type ButtonProps = PressableProps & {
@@ -11,12 +9,19 @@ export type ButtonProps = PressableProps & {
   loading?: boolean;
 };
 
-export function Button({ title, variant = 'primary', loading, disabled, style, ...rest }: ButtonProps) {
-  const bg = useThemeColor({}, 'background');
-  const text = useThemeColor({}, 'text');
-  const tint = useThemeColor({}, 'tint');
+// Couleurs fixes en mode clair
+const COLORS = {
+  primary: '#2563EB',
+  primaryText: '#FFFFFF',
+  secondaryBorder: '#2563EB',
+  secondaryText: '#2563EB',
+  danger: '#EF4444',
+  dangerText: '#FFFFFF',
+  ghostText: '#1E293B',
+};
 
-  const stylesByVariant = getVariantStyles({ variant, bg, text, tint });
+export function Button({ title, variant = 'primary', loading, disabled, style, ...rest }: ButtonProps) {
+  const stylesByVariant = getVariantStyles({ variant });
   const isDisabled = disabled || loading;
 
   return (
@@ -40,30 +45,33 @@ export function Button({ title, variant = 'primary', loading, disabled, style, .
   );
 }
 
-function getVariantStyles({
-  variant,
-  bg,
-  text,
-  tint,
-}: {
-  variant: Variant;
-  bg: string;
-  text: string;
-  tint: string;
-}) {
+function getVariantStyles({ variant }: { variant: Variant }) {
   switch (variant) {
     case 'secondary':
       return {
-        container: { backgroundColor: 'transparent', borderColor: tint, borderWidth: 1 },
-        text: { color: tint },
+        container: { 
+          backgroundColor: 'transparent', 
+          borderColor: COLORS.secondaryBorder, 
+          borderWidth: 1 
+        },
+        text: { color: COLORS.secondaryText },
       };
     case 'danger':
-      return { container: { backgroundColor: '#EF4444' }, text: { color: '#fff' } };
+      return { 
+        container: { backgroundColor: COLORS.danger }, 
+        text: { color: COLORS.dangerText } 
+      };
     case 'ghost':
-      return { container: { backgroundColor: 'transparent' }, text: { color: text } };
+      return { 
+        container: { backgroundColor: 'transparent' }, 
+        text: { color: COLORS.ghostText } 
+      };
     case 'primary':
     default:
-      return { container: { backgroundColor: tint }, text: { color: bg } };
+      return { 
+        container: { backgroundColor: COLORS.primary }, 
+        text: { color: COLORS.primaryText } 
+      };
   }
 }
 
