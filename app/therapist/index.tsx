@@ -38,6 +38,7 @@ export default function TherapistLoginScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       keyboardVerticalOffset={80}>
       <ThemedView style={styles.container}>
+        <View style={styles.safeArea} />
         <View style={styles.header}>
           <ThemedText type="subtitle">Espace thérapeute</ThemedText>
           <ThemedText>
@@ -77,6 +78,9 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 20,
     gap: 20,
+  },
+  safeArea: {
+    paddingTop: Platform.OS === 'android' ? 25 : 0,
   },
   header: {
     gap: 8,

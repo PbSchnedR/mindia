@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, View, Pressable, Linking, Text, StatusBar, Alert } from 'react-native';
+import { ScrollView, StyleSheet, View, Pressable, Linking, Text, StatusBar, Alert, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import { Button } from '@/components/ui/button';
@@ -163,6 +163,7 @@ export default function PatientDashboardScreen() {
     <>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
       <View style={styles.container}>
+        <View style={styles.safeArea} />
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.headerLeft}>
@@ -412,6 +413,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#FFFFFF',
+  },
+  safeArea: {
+    paddingTop: Platform.OS === 'android' ? 25 : 0,
   },
   center: {
     justifyContent: 'center',

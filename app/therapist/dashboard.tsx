@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, View, Text, Modal, TextInput, Alert, StatusBar } from 'react-native';
+import { FlatList, Pressable, StyleSheet, View, Text, Modal, TextInput, Alert, StatusBar, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import { Button } from '@/components/ui/button';
@@ -214,6 +214,7 @@ export default function TherapistDashboardScreen() {
     <>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
       <View style={styles.container}>
+        <View style={styles.safeArea} />
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.headerContent}>
@@ -339,6 +340,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#FFFFFF',
+  },
+  safeArea: {
+    paddingTop: Platform.OS === 'android' ? 25 : 0,
   },
   centerContent: {
     justifyContent: 'center',

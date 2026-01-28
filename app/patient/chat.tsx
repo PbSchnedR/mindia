@@ -234,6 +234,7 @@ export default function PatientChatScreen() {
       behavior={Platform.select({ ios: 'padding', android: undefined })}
       style={{ flex: 1, backgroundColor: bg }}>
       <ThemedView style={styles.container}>
+        <View style={styles.safeArea} />
         <View style={styles.headerContainer}>
           <View style={styles.header}>
             <ThemedText type="subtitle">Bulle de parole</ThemedText>
@@ -350,6 +351,9 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 16,
     gap: 12,
+  },
+  safeArea: {
+    paddingTop: Platform.OS === 'android' ? 25 : 0,
   },
   headerContainer: {
     flexDirection: 'row',

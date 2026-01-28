@@ -1,6 +1,6 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, View, TextInput, Modal, Alert, Text, Pressable, StatusBar } from 'react-native';
+import { ScrollView, StyleSheet, View, TextInput, Modal, Alert, Text, Pressable, StatusBar, Platform } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -260,6 +260,7 @@ export default function TherapistPatientDetailScreen() {
     <>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
       <View style={styles.container}>
+        <View style={styles.safeArea} />
         {/* Header */}
         <View style={styles.header}>
           <Pressable onPress={handleBack} hitSlop={10}>
@@ -650,6 +651,9 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#FFFFFF',
+  },
+  safeArea: {
+    paddingTop: Platform.OS === 'android' ? 25 : 0,
   },
   center: {
     justifyContent: 'center',

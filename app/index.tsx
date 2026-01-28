@@ -188,6 +188,7 @@ export default function LandingScreen() {
     <>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
       <View style={styles.page}>
+        <View style={styles.safeArea} />
         <ScrollView contentContainerStyle={styles.scrollContent}>
           {/* Logo et titre */}
           <View style={styles.header}>
@@ -370,6 +371,9 @@ const styles = StyleSheet.create({
   page: {
     flex: 1,
     backgroundColor: '#FFFFFF',
+  },
+  safeArea: {
+    paddingTop: Platform.OS === 'android' ? 25 : 0,
   },
   scrollContent: {
     flexGrow: 1,

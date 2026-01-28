@@ -64,6 +64,7 @@ export default function PatientLoginScreen() {
 
   return (
     <ThemedView style={styles.container}>
+      <View style={styles.safeArea} />
       <View style={styles.header}>
         <ThemedText type="title">Ma bulle</ThemedText>
         <ThemedText style={styles.subtitle}>
@@ -118,6 +119,9 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 20,
     justifyContent: 'center',
+  },
+  safeArea: {
+    paddingTop: Platform.OS === 'android' ? 25 : 0,
   },
   header: {
     alignItems: 'center',
