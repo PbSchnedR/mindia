@@ -1,16 +1,11 @@
 import { useRouter, useRootNavigationState } from 'expo-router';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, FlatList, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Alert, FlatList, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View, useWindowDimensions } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Button } from '@/components/ui/button';
-import { useThemeColor } from '@/hooks/use-theme-color';
-import {
-  appendMessage,
-  listChatSessionsForPatient,
-  startChatSession,
-} from '@/lib/chat';
 import { api } from '@/lib/api';
 import { useSession } from '@/lib/session-context';
 import type { ChatMessage } from '@/lib/types';
@@ -19,7 +14,7 @@ export default function PatientChatScreen() {
   const { session, signOut, loading: sessionLoading } = useSession();
   const router = useRouter();
   const rootNavState = useRootNavigationState();
-  const bg = useThemeColor({}, 'background');
+  const { width } = useWindowDimensions();
   const listRef = useRef<FlatList<ChatMessage> | null>(null);
   const didInitialScrollRef = useRef(false);
   const shouldAutoScrollRef = useRef(true);
@@ -28,10 +23,16 @@ export default function PatientChatScreen() {
   const [sending, setSending] = useState(false);
   const [currentText, setCurrentText] = useState('');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [chatId, setChatId] = useState<string | null>(null);
+  const [conversations, setConversations] = useState<
+    { id: string; createdAt: string; lastMessage?: { from: string; text: string; createdAt: string } | null }[]
+  >([]);
+  const [conversationId, setConversationId] = useState<string | null>(null);
   const [sendStatus, setSendStatus] = useState<'idle' | 'sending' | 'waiting' | 'error'>('idle');
   const [sendError, setSendError] = useState<string | null>(null);
   const [backendOk, setBackendOk] = useState<boolean | null>(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  const isDesktop = Platform.OS === 'web' && width >= 1024;
 
   const normalizeMessages = useCallback((raw: ChatMessage[] | null | undefined): ChatMessage[] => {
     // On se contente de nettoyer sans réordonner : on fait confiance à l'ordre
@@ -60,15 +61,62 @@ export default function PatientChatScreen() {
       try {
         const available = await api.isAvailable();
         setBackendOk(available);
-        const sessions = await listChatSessionsForPatient(session.patientId);
-        if (sessions.length > 0) {
-          const latest = sessions[0];
-          setChatId(latest.id);
-          setMessages(normalizeMessages(latest.messages));
+        // Charger les conversations pour ce patient
+        const { conversations: convs } = await api.conversations.listForUser(
+          session.patientId
+        );
+
+        let currentConvId: string | null = null;
+
+        if (convs.length === 0) {
+          // Créer une première conversation vide
+          const { conversation } = await api.conversations.create(
+            session.patientId
+          );
+          currentConvId = conversation.id;
+          setConversations([
+            {
+              id: conversation.id,
+              createdAt: conversation.createdAt,
+              lastMessage:
+                (conversation.messages || []).length > 0
+                  ? {
+                      from: conversation.messages[
+                        conversation.messages.length - 1
+                      ].from,
+                      text: conversation.messages[
+                        conversation.messages.length - 1
+                      ].text,
+                      createdAt: conversation.messages[
+                        conversation.messages.length - 1
+                      ].createdAt,
+                    }
+                  : null,
+            },
+          ]);
         } else {
-          const created = await startChatSession(session.patientId, session.therapistId);
-          setChatId(created.id);
-          setMessages(normalizeMessages(created.messages));
+          currentConvId = convs[0].id;
+          setConversations(convs);
+        }
+
+        setConversationId(currentConvId);
+
+        if (currentConvId) {
+          const { messages } = await api.conversations.getMessages(
+            session.patientId,
+            currentConvId
+          );
+          const normalized = normalizeMessages(
+            (messages || []).map((m: any, index: number) => ({
+              id: m._id || String(index),
+              author: m.author ?? m.from,
+              text: m.text,
+              createdAt: m.createdAt || new Date().toISOString(),
+            }))
+          );
+          setMessages(normalized);
+        } else {
+          setMessages([]);
         }
       } catch (e) {
         console.error(e);
@@ -139,7 +187,7 @@ export default function PatientChatScreen() {
   };
 
   const handleSend = async () => {
-    if (!chatId || !session || session.role !== 'patient') {
+    if (!conversationId || !session || session.role !== 'patient') {
       Alert.alert('Patiente un instant', 'La conversation est en cours de chargement.');
       return;
     }
@@ -162,9 +210,23 @@ export default function PatientChatScreen() {
       setMessages((prev) => normalizeMessages([...prev, optimistic]));
       scrollToBottom(true);
 
-      // Envoyer le message du patient
-      const updated = await appendMessage(chatId, 'patient', textToSend);
-      setMessages(normalizeMessages(updated.messages));
+      // Envoyer le message du patient dans la conversation active
+      const { messages: updatedMessages } =
+        await api.conversations.addMessage(
+          session.patientId,
+          conversationId,
+          'patient',
+          textToSend
+        );
+      const normalizedUpdated = normalizeMessages(
+        (updatedMessages || []).map((m: any, index: number) => ({
+          id: m._id || String(index),
+          author: m.author ?? m.from,
+          text: m.text,
+          createdAt: m.createdAt || new Date().toISOString(),
+        }))
+      );
+      setMessages(normalizedUpdated);
       
       const userMessage = textToSend;
       setCurrentText('');
@@ -175,9 +237,12 @@ export default function PatientChatScreen() {
 
       let aiResponse = '';
       try {
-        const context = (updated.messages || [])
+        const context = (normalizedUpdated || [])
           .slice(-12)
-          .map((m) => ({ from: m.author as 'therapist' | 'patient' | 'ai', text: m.text }));
+          .map((m) => ({
+            from: m.author as 'therapist' | 'patient' | 'ai',
+            text: m.text,
+          }));
         const result = await api.ai.reply(context);
         aiResponse = result.reply;
       } catch (error) {
@@ -190,8 +255,22 @@ export default function PatientChatScreen() {
         aiResponse = getMockAIResponse(userMessage);
       }
 
-      const auto = await appendMessage(chatId, 'ai', aiResponse);
-      setMessages(normalizeMessages(auto.messages));
+      const { messages: autoMessages } =
+        await api.conversations.addMessage(
+          session.patientId,
+          conversationId,
+          'ai',
+          aiResponse
+        );
+      const normalizedAuto = normalizeMessages(
+        (autoMessages || []).map((m: any, index: number) => ({
+          id: m._id || String(index),
+          author: m.author ?? m.from,
+          text: m.text,
+          createdAt: m.createdAt || new Date().toISOString(),
+        }))
+      );
+      setMessages(normalizedAuto);
       setSendStatus('idle');
     } catch (e) {
       console.error(e);
@@ -229,99 +308,266 @@ export default function PatientChatScreen() {
     return <Bubble message={item} />;
   };
 
+  const handleSelectConversation = async (id: string) => {
+    if (!session) return;
+    if (id === conversationId) return;
+    setConversationId(id);
+    setLoading(true);
+    try {
+      const { messages } = await api.conversations.getMessages(
+        session.patientId,
+        id
+      );
+      const normalized = normalizeMessages(
+        (messages || []).map((m: any, index: number) => ({
+          id: m._id || String(index),
+          author: m.author ?? m.from,
+          text: m.text,
+          createdAt: m.createdAt || new Date().toISOString(),
+        }))
+      );
+      setMessages(normalized);
+      didInitialScrollRef.current = false;
+    } catch (error) {
+      console.error('Erreur chargement conversation:', error);
+      Alert.alert(
+        'Erreur',
+        'Impossible de charger cette conversation pour le moment.'
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleNewConversation = async () => {
+    if (!session) return;
+    try {
+      const { conversation } = await api.conversations.create(
+        session.patientId
+      );
+      const newConv = {
+        id: conversation.id,
+        createdAt: conversation.createdAt,
+        lastMessage:
+          (conversation.messages || []).length > 0
+            ? {
+                from: conversation.messages[
+                  conversation.messages.length - 1
+                ].from,
+                text: conversation.messages[
+                  conversation.messages.length - 1
+                ].text,
+                createdAt: conversation.messages[
+                  conversation.messages.length - 1
+                ].createdAt,
+              }
+            : null,
+      };
+      setConversations((prev) => [newConv, ...prev]);
+      setConversationId(conversation.id);
+      setMessages([]);
+      didInitialScrollRef.current = false;
+    } catch (error) {
+      console.error('Erreur création conversation:', error);
+      Alert.alert(
+        'Erreur',
+        'Impossible de créer une nouvelle conversation.'
+      );
+    }
+  };
+
+  const renderSidebarContent = () => {
+    return (
+      <View style={styles.sidebarInner}>
+        <Text style={styles.sidebarTitle}>Mes conversations</Text>
+        <Pressable
+          onPress={handleNewConversation}
+          style={styles.sidebarNewButton}
+        >
+          <Ionicons name="add-circle-outline" size={18} color="#2563EB" />
+          <Text style={styles.sidebarNewButtonText}>Nouvelle conversation</Text>
+        </Pressable>
+        <View style={styles.sidebarList}>
+          {conversations.length === 0 ? (
+            <Text style={styles.sidebarEmptyText}>
+              Aucune conversation pour l'instant.
+            </Text>
+          ) : (
+            conversations.map((conv) => (
+              <Pressable
+                key={conv.id}
+                onPress={async () => {
+                  await handleSelectConversation(conv.id);
+                  if (!isDesktop) {
+                    setSidebarOpen(false);
+                  }
+                }}
+                style={[
+                  styles.sidebarConversation,
+                  conv.id === conversationId && styles.sidebarConversationActive,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.sidebarConversationTitle,
+                    conv.id === conversationId &&
+                      styles.sidebarConversationTitleActive,
+                  ]}
+                  numberOfLines={1}
+                >
+                  {conv.lastMessage?.text
+                    ? conv.lastMessage.text.slice(0, 40)
+                    : 'Nouvelle conversation'}
+                </Text>
+                <Text style={styles.sidebarConversationDate}>
+                  {new Date(conv.createdAt).toLocaleDateString('fr-FR', {
+                    day: '2-digit',
+                    month: '2-digit',
+                  })}
+                </Text>
+              </Pressable>
+            ))
+          )}
+        </View>
+      </View>
+    );
+  };
+
   return (
     <KeyboardAvoidingView
       behavior={Platform.select({ ios: 'padding', android: undefined })}
-      style={{ flex: 1, backgroundColor: bg }}>
+      style={{ flex: 1, backgroundColor: '#FFFFFF' }}>
       <ThemedView style={styles.container}>
         <View style={styles.safeArea} />
-        <View style={styles.headerContainer}>
-          <View style={styles.header}>
-            <ThemedText type="subtitle">Bulle de parole</ThemedText>
-            <ThemedText style={styles.headerDescription}>
-              Tu peux écrire librement. Ce que tu partages est synthétisé pour ton thérapeute.
-            </ThemedText>
-          </View>
-          <View style={styles.headerActions}>
-            <Pressable onPress={handleBackToDashboard} hitSlop={10} style={styles.headerActionButton}>
-              <Text style={styles.headerIcon}>↩</Text>
-              <Text style={styles.backText}>Retour</Text>
-            </Pressable>
-            <Pressable onPress={handleSignOut} hitSlop={10} style={styles.headerActionButton}>
-              <Text style={styles.headerIcon}>⎋</Text>
-              <Text style={styles.logoutText}>Déconnexion</Text>
-            </Pressable>
+        <View style={[styles.appLayout, isDesktop && styles.appLayoutDesktop]}>
+          {isDesktop && (
+            <View style={styles.sidebar}>
+              {renderSidebarContent()}
+            </View>
+          )}
+
+          <View style={styles.main}>
+            <View style={styles.headerContainer}>
+              <View style={styles.headerLeft}>
+                {!isDesktop && (
+                  <Pressable
+                    onPress={() => setSidebarOpen(true)}
+                    hitSlop={10}
+                    style={styles.menuButton}
+                  >
+                    <Ionicons name="menu" size={22} color="#1E293B" />
+                  </Pressable>
+                )}
+                <View style={styles.header}>
+                  <Text style={styles.headerTitle}>Ma bulle</Text>
+                  <Text style={styles.headerDescription}>
+                    Un espace pour déposer ce que tu ressens entre les séances.
+                  </Text>
+                </View>
+              </View>
+              <View style={styles.headerActions}>
+                <Pressable
+                  onPress={handleBackToDashboard}
+                  hitSlop={10}
+                  style={styles.headerActionButton}
+                >
+                  <Ionicons name="home-outline" size={18} color="#94A3B8" />
+                  <Text style={styles.backText}>Accueil</Text>
+                </Pressable>
+                <Pressable
+                  onPress={handleSignOut}
+                  hitSlop={10}
+                  style={styles.headerActionButton}
+                >
+                  <Ionicons name="log-out-outline" size={18} color="#94A3B8" />
+                  <Text style={styles.logoutText}>Déconnexion</Text>
+                </Pressable>
+              </View>
+            </View>
+
+            <FlatList
+              ref={(r) => {
+                listRef.current = r;
+              }}
+              data={messages}
+              keyExtractor={(m) => m.id}
+              renderItem={renderMessage}
+              contentContainerStyle={styles.messages}
+              style={{ flex: 1 }}
+              onContentSizeChange={() => {
+                if (shouldAutoScrollRef.current) scrollToBottom(false);
+              }}
+              onScroll={({ nativeEvent }) => {
+                // Si l'utilisateur remonte, on évite de le "forcer" vers le bas.
+                const { layoutMeasurement, contentOffset, contentSize } =
+                  nativeEvent;
+                const distanceFromBottom =
+                  contentSize.height -
+                  (layoutMeasurement.height + contentOffset.y);
+                shouldAutoScrollRef.current = distanceFromBottom < 80;
+              }}
+              scrollEventThrottle={16}
+            />
+
+            <View style={styles.inputRow}>
+              <TextInput
+                placeholder="Écris ici ce qui se passe pour toi…"
+                placeholderTextColor="#9BA1A6"
+                multiline
+                style={styles.input}
+                value={currentText}
+                onChangeText={setCurrentText}
+              />
+              <Button
+                title={sending ? 'Envoi...' : 'Envoyer'}
+                onPress={handleSend}
+                loading={sending}
+                disabled={sending}
+              />
+            </View>
+            {backendOk === false && (
+              <View style={styles.sendStatusRow}>
+                <Text style={styles.sendStatusWarning}>
+                  Serveur indisponible. Les messages ne sont pas synchronisés.
+                </Text>
+              </View>
+            )}
+            {(sendStatus !== 'idle' || sendError) && (
+              <View style={styles.sendStatusRow}>
+                {sendStatus === 'sending' && (
+                  <Text style={styles.sendStatusText}>Envoi en cours...</Text>
+                )}
+                {sendStatus === 'waiting' && (
+                  <Text style={styles.sendStatusText}>Réponse en cours...</Text>
+                )}
+                {sendStatus === 'error' && sendError && (
+                  <Text style={styles.sendStatusError}>{sendError}</Text>
+                )}
+                {sendStatus === 'idle' && sendError && (
+                  <Text style={styles.sendStatusError}>{sendError}</Text>
+                )}
+              </View>
+            )}
+
+            <View style={styles.footer}>
+              <Text style={styles.footerText}>
+                En cas de danger immédiat, appelle le 15 / 112 ou les services
+                d'urgence de ton pays.
+              </Text>
+            </View>
           </View>
         </View>
 
-        <FlatList
-          ref={(r) => {
-            listRef.current = r;
-          }}
-          data={messages}
-          keyExtractor={(m) => m.id}
-          renderItem={renderMessage}
-          contentContainerStyle={styles.messages}
-          style={{ flex: 1 }}
-          onContentSizeChange={() => {
-            if (shouldAutoScrollRef.current) scrollToBottom(false);
-          }}
-          onScroll={({ nativeEvent }) => {
-            // Si l'utilisateur remonte, on évite de le "forcer" vers le bas.
-            const { layoutMeasurement, contentOffset, contentSize } = nativeEvent;
-            const distanceFromBottom =
-              contentSize.height - (layoutMeasurement.height + contentOffset.y);
-            shouldAutoScrollRef.current = distanceFromBottom < 80;
-          }}
-          scrollEventThrottle={16}
-        />
-
-
-        <View style={styles.inputRow}>
-          <TextInput
-            placeholder="Écris ici ce qui se passe pour toi…"
-            placeholderTextColor="#9BA1A6"
-            multiline
-            style={styles.input}
-            value={currentText}
-            onChangeText={setCurrentText}
-          />
-          <Button
-            title={sending ? 'Envoi...' : 'Envoyer'}
-            onPress={handleSend}
-            loading={sending}
-            disabled={sending}
-          />
-        </View>
-        {backendOk === false && (
-          <View style={styles.sendStatusRow}>
-            <Text style={styles.sendStatusWarning}>
-              Serveur indisponible. Les messages ne sont pas synchronisés.
-            </Text>
+        {/* Sidebar mobile (burger) */}
+        {!isDesktop && sidebarOpen && (
+          <View style={styles.sidebarOverlay}>
+            <Pressable
+              style={styles.sidebarBackdrop}
+              onPress={() => setSidebarOpen(false)}
+            />
+            <View style={styles.sidebarDrawer}>{renderSidebarContent()}</View>
           </View>
         )}
-        {(sendStatus !== 'idle' || sendError) && (
-          <View style={styles.sendStatusRow}>
-            {sendStatus === 'sending' && (
-              <Text style={styles.sendStatusText}>Envoi en cours...</Text>
-            )}
-            {sendStatus === 'waiting' && (
-              <Text style={styles.sendStatusText}>Réponse en cours...</Text>
-            )}
-            {sendStatus === 'error' && sendError && (
-              <Text style={styles.sendStatusError}>{sendError}</Text>
-            )}
-            {sendStatus === 'idle' && sendError && (
-              <Text style={styles.sendStatusError}>{sendError}</Text>
-            )}
-          </View>
-        )}
-
-        <View style={styles.footer}>
-          <Text style={styles.footerText}>
-            En cas de danger immédiat, appelle le 15 / 112 ou les services d'urgence de ton pays.
-          </Text>
-        </View>
       </ThemedView>
     </KeyboardAvoidingView>
   );
@@ -332,7 +578,7 @@ function Bubble({ message }: { message: ChatMessage }) {
   const isAi = message.author === 'ai';
   const isTherapist = message.author === 'therapist';
 
-  const bgColor = isPatient ? '#DBEAFE' : isAi ? '#EEF2FF' : '#DCFCE7';
+  const bgColor = isPatient ? '#EFF6FF' : isAi ? '#F8FAFF' : '#DCFCE7';
   const align = isPatient ? 'flex-end' : 'flex-start';
   const label = isPatient ? 'Toi' : isAi ? 'IA' : 'Psy';
 
@@ -349,24 +595,50 @@ function Bubble({ message }: { message: ChatMessage }) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 16,
-    gap: 12,
+    backgroundColor: '#FFFFFF',
+  },
+  appLayout: {
+    flex: 1,
+    flexDirection: 'column',
+  },
+  appLayoutDesktop: {
+    flexDirection: 'row',
   },
   safeArea: {
     paddingTop: Platform.OS === 'android' ? 25 : 0,
+  },
+  main: {
+    flex: 1,
+    paddingHorizontal: 24,
+    paddingVertical: 16,
+    gap: 12,
+    backgroundColor: '#FFFFFF',
   },
   headerContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 4,
+    marginBottom: 8,
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    flex: 1,
+    gap: 8,
   },
   header: {
     flex: 1,
-    gap: 6,
+    gap: 4,
+  },
+  headerTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#1E293B',
   },
   headerDescription: {
-    opacity: 0.8,
+    fontSize: 14,
+    color: '#64748B',
+    lineHeight: 20,
   },
   headerActions: {
     alignItems: 'flex-end',
@@ -391,9 +663,101 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#9CA3AF',
   },
+  menuButton: {
+    paddingVertical: 4,
+    paddingRight: 4,
+  },
+  sidebar: {
+    width: 260,
+    backgroundColor: '#F8FAFC',
+    paddingVertical: 16,
+    paddingHorizontal: 12,
+    borderRightWidth: 1,
+    borderRightColor: '#E2E8F0',
+  },
+  sidebarInner: {
+    flex: 1,
+    gap: 12,
+  },
+  sidebarTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#1E293B',
+    marginBottom: 4,
+  },
+  sidebarNewButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 999,
+    backgroundColor: '#EFF6FF',
+    borderWidth: 1,
+    borderColor: '#DBEAFE',
+  },
+  sidebarNewButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#2563EB',
+  },
+  sidebarList: {
+    marginTop: 8,
+    gap: 4,
+  },
+  sidebarConversation: {
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  sidebarConversationActive: {
+    backgroundColor: '#3B82F6',
+    borderColor: '#3B82F6',
+  },
+  sidebarConversationTitle: {
+    fontSize: 13,
+    color: '#1E293B',
+    marginBottom: 2,
+  },
+  sidebarConversationTitleActive: {
+    fontWeight: '600',
+  },
+  sidebarConversationDate: {
+    fontSize: 11,
+    color: '#64748B',
+  },
+  sidebarEmptyText: {
+    fontSize: 12,
+    color: '#94A3B8',
+    marginTop: 4,
+  },
+  sidebarOverlay: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    flexDirection: 'row',
+  },
+  sidebarBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(15,23,42,0.45)',
+  },
+  sidebarDrawer: {
+    width: 260,
+    backgroundColor: '#F8FAFC',
+    paddingVertical: 16,
+    paddingHorizontal: 12,
+    borderRightWidth: 1,
+    borderRightColor: '#E2E8F0',
+  },
   messages: {
     gap: 6,
     paddingVertical: 8,
+    paddingHorizontal: 8,
   },
   bubbleContainer: {
     width: '100%',

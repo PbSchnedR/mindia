@@ -48,6 +48,12 @@ export default function TherapistPatientDetailScreen() {
   const [activeTab, setActiveTab] = useState<'qr' | 'reports' | 'discussion'>('qr');
   const [reportsView, setReportsView] = useState<'ai' | 'therapist'>('therapist');
 
+  // Conversations de la bulle (multi-convs)
+  const [conversations, setConversations] = useState<
+    { id: string; createdAt: string; lastMessage?: { from: string; text: string; createdAt: string } | null }[]
+  >([]);
+  const [conversationId, setConversationId] = useState<string | null>(null);
+
   const isDesktop = Platform.OS === 'web' && width >= 1024;
 
   useEffect(() => {
@@ -65,27 +71,53 @@ export default function TherapistPatientDetailScreen() {
         setPatientEmail(user.email || '');
         setActualMood(user.actual_mood || null);
         
-        const { messages: messagesData } = await api.messages.get(patientId);
-        setMessages(messagesData || []);
-        
-        const patientMessages = (messagesData || []).filter((m: any) => m.from === 'patient');
-        if (patientMessages.length > 0) {
-          const lastMsg = patientMessages[patientMessages.length - 1];
-          let messageDate = lastMsg.createdAt;
-          if (!messageDate && lastMsg._id) {
-            const objectIdTimestamp = typeof lastMsg._id === 'string' 
-              ? parseInt(lastMsg._id.substring(0, 8), 16) * 1000
-              : lastMsg._id.getTimestamp ? lastMsg._id.getTimestamp().toISOString() : new Date().toISOString();
-            messageDate = typeof objectIdTimestamp === 'number' 
-              ? new Date(objectIdTimestamp).toISOString()
-              : objectIdTimestamp;
-          }
-          setLastPatientMessage({
-            text: lastMsg.text,
-            date: messageDate || new Date().toISOString(),
-          });
+        // Charger les conversations de la bulle
+        const { conversations: convs } = await api.conversations.listForUser(
+          patientId
+        );
+
+        let currentConvId: string | null = null;
+
+        if (convs.length > 0) {
+          currentConvId = convs[0].id;
+          setConversations(convs);
         } else {
+          setConversations([]);
+          setMessages([]);
           setLastPatientMessage(null);
+        }
+
+        if (currentConvId) {
+          setConversationId(currentConvId);
+          const { messages: messagesData } =
+            await api.conversations.getMessages(patientId, currentConvId);
+          setMessages(messagesData || []);
+
+          const patientMessages = (messagesData || []).filter(
+            (m: any) => m.from === 'patient'
+          );
+          if (patientMessages.length > 0) {
+            const lastMsg = patientMessages[patientMessages.length - 1];
+            let messageDate = lastMsg.createdAt;
+            if (!messageDate && lastMsg._id) {
+              const objectIdTimestamp =
+                typeof lastMsg._id === 'string'
+                  ? parseInt(lastMsg._id.substring(0, 8), 16) * 1000
+                  : lastMsg._id.getTimestamp
+                  ? lastMsg._id.getTimestamp().toISOString()
+                  : new Date().toISOString();
+              messageDate =
+                typeof objectIdTimestamp === 'number'
+                  ? new Date(objectIdTimestamp).toISOString()
+                  : objectIdTimestamp;
+            }
+            setLastPatientMessage({
+              text: lastMsg.text,
+              date: messageDate || new Date().toISOString(),
+            });
+          } else {
+            setLastPatientMessage(null);
+          }
         }
         
         const { magicToken: token, expiresIn } = await api.patient.generateMagicToken(patientId);
@@ -159,10 +191,23 @@ export default function TherapistPatientDetailScreen() {
       return;
     }
 
+    if (!conversationId) {
+      Alert.alert(
+        'Conversation indisponible',
+        'Aucune conversation de bulle n\'est disponible pour ce patient.'
+      );
+      return;
+    }
+
     setSendingMessage(true);
     try {
-      await api.messages.add(patientId, 'therapist', messageText.trim());
-      const { messages: updatedMessages } = await api.messages.get(patientId);
+      const { messages: updatedMessages } =
+        await api.conversations.addMessage(
+          patientId,
+          conversationId,
+          'therapist',
+          messageText.trim()
+        );
       setMessages(updatedMessages || []);
       setMessageText('');
       setShowMessageModal(false);
@@ -479,6 +524,65 @@ export default function TherapistPatientDetailScreen() {
               </View>
 
               <View style={[styles.discussionRight, isDesktop && styles.discussionRightDesktop]}>
+                {/* Liste des conversations de la bulle */}
+                <View style={styles.conversationsRow}>
+                  <Text style={styles.messagesTitle}>Conversations</Text>
+                  <View style={styles.conversationsList}>
+                    {conversations.length === 0 ? (
+                      <Text style={styles.conversationChipEmpty}>
+                        Aucune conversation encore.
+                      </Text>
+                    ) : (
+                      conversations.map((conv) => (
+                        <Pressable
+                          key={conv.id}
+                          onPress={async () => {
+                            if (!patient) return;
+                            if (conv.id === conversationId) return;
+                            try {
+                              setConversationId(conv.id);
+                              const { messages: convMessages } =
+                                await api.conversations.getMessages(
+                                  patient.id,
+                                  conv.id
+                                );
+                              setMessages(convMessages || []);
+                            } catch (error) {
+                              console.error(
+                                'Erreur chargement conversation:',
+                                error
+                              );
+                              Alert.alert(
+                                'Erreur',
+                                'Impossible de charger cette conversation.'
+                              );
+                            }
+                          }}
+                          style={[
+                            styles.conversationChip,
+                            conv.id === conversationId &&
+                              styles.conversationChipActive,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.conversationChipText,
+                              conv.id === conversationId &&
+                                styles.conversationChipTextActive,
+                            ]}
+                            numberOfLines={1}
+                          >
+                            {new Date(conv.createdAt).toLocaleDateString(
+                              'fr-FR',
+                              { day: '2-digit', month: '2-digit' }
+                            )}
+                          </Text>
+                        </Pressable>
+                      ))
+                    )}
+                  </View>
+                </View>
+
                 <View style={styles.messagesContent}>
                   <Text style={styles.messagesTitle}>Historique des échanges</Text>
                   {messages.length === 0 ? (
@@ -934,6 +1038,44 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     color: '#1E293B',
+  },
+  conversationsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+    gap: 8,
+  },
+  conversationsList: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    flex: 1,
+    justifyContent: 'flex-end',
+  },
+  conversationChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    backgroundColor: '#FFFFFF',
+  },
+  conversationChipActive: {
+    backgroundColor: '#2563EB',
+    borderColor: '#2563EB',
+  },
+  conversationChipText: {
+    fontSize: 12,
+    color: '#4B5563',
+  },
+  conversationChipTextActive: {
+    color: '#FFFFFF',
+    fontWeight: '600',
+  },
+  conversationChipEmpty: {
+    fontSize: 12,
+    color: '#9CA3AF',
   },
   messageCard: {
     backgroundColor: '#F8FAFC',

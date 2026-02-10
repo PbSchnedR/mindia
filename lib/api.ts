@@ -345,6 +345,55 @@ export const api = {
     },
   },
 
+  conversations: {
+    // Liste des conversations d'un utilisateur
+    listForUser: async (userId: string): Promise<{ conversations: any[] }> => {
+      return apiRequest(`/users/${userId}/conversations`);
+    },
+
+    // Créer une nouvelle conversation (optionnellement avec un premier message)
+    create: async (
+      userId: string,
+      initialFrom?: 'therapist' | 'patient' | 'ai',
+      initialText?: string
+    ): Promise<{ conversation: any }> => {
+      return apiRequest(`/users/${userId}/conversations`, {
+        method: 'POST',
+        body: JSON.stringify(
+          initialFrom && initialText
+            ? { initialFrom, initialText }
+            : {}
+        ),
+      });
+    },
+
+    // Récupérer les messages d'une conversation
+    getMessages: async (
+      userId: string,
+      conversationId: string
+    ): Promise<{ messages: any[] }> => {
+      return apiRequest(
+        `/users/${userId}/conversations/${conversationId}/messages`
+      );
+    },
+
+    // Ajouter un message dans une conversation
+    addMessage: async (
+      userId: string,
+      conversationId: string,
+      from: 'therapist' | 'patient' | 'ai',
+      text: string
+    ): Promise<{ message: any; messages: any[] }> => {
+      return apiRequest(
+        `/users/${userId}/conversations/${conversationId}/messages`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ from, text }),
+        }
+      );
+    },
+  },
+
   reports: {
     // Récupérer les constats d'un patient
     get: async (patientId: string): Promise<{ reports: any[] }> => {
