@@ -4,6 +4,7 @@ import { ScrollView, StyleSheet, View, Pressable, Linking, Text, StatusBar, Aler
 import { Ionicons } from '@expo/vector-icons';
 
 import { Button } from '@/components/ui/button';
+import { PrimaryTabs } from '@/components/primary-tabs';
 import { useSession } from '@/lib/session-context';
 import { api } from '@/lib/api';
 import { listChatSessionsForPatient, setSeverity, setSummaryAndKeywords, simpleAutoSummary, startChatSession } from '@/lib/chat';
@@ -214,16 +215,280 @@ export default function PatientDashboardScreen() {
           </View>
         )}
 
-        {/* Content selon le tab actif */}
-        <ScrollView
-          contentContainerStyle={[
-            styles.scrollContent,
-            isDesktop && styles.scrollContentDesktop,
-          ]}
-        >
-          {activeTab === 'bubble' ? (
-            <View style={[styles.bubbleLayout, isDesktop && styles.bubbleLayoutDesktop]}>
-              <View style={[styles.bubbleLeft, isDesktop && styles.bubbleLeftDesktop]}>
+        {/* Onglets principaux (desktop uniquement) */}
+        {isDesktop && (
+          <PrimaryTabs
+            tabs={[
+              { key: 'bubble', label: 'Bulle' },
+              { key: 'reports', label: 'Synthèses' },
+            ]}
+            activeKey={activeTab}
+            onChange={(key) => setActiveTab(key as 'bubble' | 'reports')}
+            style={styles.desktopTabs}
+          />
+        )}
+
+        {/* Contenu (UI mobile vs UI desktop dédiée) */}
+        {isDesktop ? (
+          <ScrollView
+            contentContainerStyle={[styles.scrollContent, styles.scrollContentDesktop]}
+            showsVerticalScrollIndicator={false}
+          >
+            {activeTab === 'bubble' ? (
+              <View
+                style={[styles.bubbleLayout, styles.bubbleLayoutDesktop]}
+              >
+                <View
+                  style={[
+                    styles.bubbleLeft,
+                    styles.bubbleLeftDesktop,
+                  ]}
+                >
+                  {/* Card IA Bulle */}
+                  <View style={styles.aiCard}>
+                    <View style={styles.aiIllustration}>
+                      <Text style={styles.aiEmoji}>🤖</Text>
+                    </View>
+                    <Text style={styles.aiName}>Assistant IA</Text>
+                    <Text style={styles.aiSubtext}>
+                      Un espace sûr pour exprimer tes émotions, disponible 24/7
+                    </Text>
+                    <Pressable
+                      style={styles.bubbleButton}
+                      onPress={handleOpenChat}
+                    >
+                      <Text style={styles.bubbleButtonText}>
+                        Entrer dans ma bulle
+                      </Text>
+                      <Ionicons
+                        name="arrow-forward"
+                        size={20}
+                        color="#FFFFFF"
+                      />
+                    </Pressable>
+                  </View>
+
+                  {/* Comment te sens-tu ? */}
+                  <View style={styles.moodSection}>
+                    <Text style={styles.sectionTitle}>
+                      Comment te sens-tu ?
+                    </Text>
+                    <View style={styles.moodButtons}>
+                      <Pressable
+                        style={[
+                          styles.moodButton,
+                          mood === 1 && styles.moodButtonActive,
+                        ]}
+                        onPress={() => handleSelectMood(1)}
+                      >
+                        <Text style={styles.moodEmoji}>😊</Text>
+                        <Text
+                          style={[
+                            styles.moodButtonText,
+                            mood === 1 && styles.moodButtonTextActive,
+                          ]}
+                        >
+                          Bien
+                        </Text>
+                      </Pressable>
+                      <Pressable
+                        style={[
+                          styles.moodButton,
+                          mood === 2 && styles.moodButtonActive,
+                        ]}
+                        onPress={() => handleSelectMood(2)}
+                      >
+                        <Text style={styles.moodEmoji}>😟</Text>
+                        <Text
+                          style={[
+                            styles.moodButtonText,
+                            mood === 2 && styles.moodButtonTextActive,
+                          ]}
+                        >
+                          Difficile
+                        </Text>
+                      </Pressable>
+                      <Pressable
+                        style={[
+                          styles.moodButton,
+                          mood === 3 && styles.moodButtonActiveDanger,
+                        ]}
+                        onPress={() => handleSelectMood(3)}
+                      >
+                        <Text style={styles.moodEmoji}>😰</Text>
+                        <Text
+                          style={[
+                            styles.moodButtonText,
+                            mood === 3 && styles.moodButtonTextActive,
+                          ]}
+                        >
+                          Urgence
+                        </Text>
+                      </Pressable>
+                    </View>
+                  </View>
+                </View>
+
+                <View
+                  style={[
+                    styles.bubbleRight,
+                    styles.bubbleRightDesktop,
+                  ]}
+                >
+                  {/* Carte rendez-vous (si Calendly dispo) */}
+                  {patientInfo?.bookingUrl && (
+                    <View style={styles.bookingCard}>
+                      <Text style={styles.bookingTitle}>Prendre rendez-vous</Text>
+                      <Text style={styles.bookingText}>
+                        Planifie une prochaine séance avec ton thérapeute quand tu en as besoin.
+                      </Text>
+                      <Pressable
+                        style={styles.bookingButton}
+                        onPress={() =>
+                          Linking.openURL(patientInfo.bookingUrl!)
+                        }
+                      >
+                        <Ionicons
+                          name="calendar-outline"
+                          size={18}
+                          color="#2563EB"
+                        />
+                        <Text style={styles.bookingButtonText}>
+                          Ouvrir le calendrier
+                        </Text>
+                      </Pressable>
+                    </View>
+                  )}
+
+                  {/* Exercices rapides */}
+                  <View style={styles.exercisesSection}>
+                    <Text style={styles.sectionTitle}>Exercices rapides</Text>
+                    <View style={styles.exerciseItem}>
+                      <View style={styles.exerciseIcon}>
+                        <Ionicons name="fitness" size={24} color="#2563EB" />
+                      </View>
+                      <View style={styles.exerciseContent}>
+                        <Text style={styles.exerciseTitle}>
+                          Respiration profonde
+                        </Text>
+                        <Text style={styles.exerciseText}>
+                          Inspire 4s, retiens 4s, expire 6s
+                        </Text>
+                      </View>
+                    </View>
+                    <View style={styles.exerciseItem}>
+                      <View style={styles.exerciseIcon}>
+                        <Ionicons name="walk" size={24} color="#2563EB" />
+                      </View>
+                      <View style={styles.exerciseContent}>
+                        <Text style={styles.exerciseTitle}>
+                          Marche de 5 minutes
+                        </Text>
+                        <Text style={styles.exerciseText}>
+                          Sors prendre l'air pour apaiser ton esprit
+                        </Text>
+                      </View>
+                    </View>
+                    <View style={styles.exerciseItem}>
+                      <View style={styles.exerciseIcon}>
+                        <Ionicons name="call" size={24} color="#2563EB" />
+                      </View>
+                      <View style={styles.exerciseContent}>
+                        <Text style={styles.exerciseTitle}>
+                          Contacter un proche
+                        </Text>
+                        <Text style={styles.exerciseText}>
+                          Parler peut vraiment aider à se sentir mieux
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+                </View>
+              </View>
+            ) : (
+              <View style={styles.reportsDesktopLayout}>
+                <View style={styles.reportsDesktopColumn}>
+                  <Text style={styles.reportsTitle}>
+                    Constats de mon thérapeute
+                  </Text>
+                  {reports.length === 0 ? (
+                    <View style={styles.emptyState}>
+                      <Ionicons
+                        name="document-text-outline"
+                        size={48}
+                        color="#CBD5E1"
+                      />
+                      <Text style={styles.emptyText}>
+                        Aucun constat pour le moment
+                      </Text>
+                      <Text style={styles.emptySubtext}>
+                        Ton thérapeute peut noter ses observations ici après
+                        vos séances
+                      </Text>
+                    </View>
+                  ) : (
+                    reports.map((report) => (
+                      <View key={report._id} style={styles.reportCard}>
+                        <View style={styles.reportHeader}>
+                          <View
+                            style={[
+                              styles.reportBadge,
+                              report.from === 'ai' && styles.reportBadgeAi,
+                            ]}
+                          >
+                            <Text style={styles.reportBadgeText}>
+                              {report.from === 'therapist' ? 'Thérapeute' : 'IA'}
+                            </Text>
+                          </View>
+                          <Text style={styles.reportDate}>
+                            {formatDateTime(report.date)}
+                          </Text>
+                        </View>
+                        <Text style={styles.reportContent}>
+                          {report.content}
+                        </Text>
+                      </View>
+                    ))
+                  )}
+                </View>
+
+                <View style={styles.reportsDesktopColumn}>
+                  <Text style={styles.reportsTitle}>Dernière synthèse IA</Text>
+                  {lastSummary ? (
+                    <View style={styles.summaryCard}>
+                      <View style={styles.summaryIcon}>
+                        <Ionicons
+                          name="sparkles"
+                          size={24}
+                          color="#2563EB"
+                        />
+                      </View>
+                      <Text style={styles.summaryText}>{lastSummary}</Text>
+                    </View>
+                  ) : (
+                    <View style={styles.emptyState}>
+                      <Ionicons
+                        name="sparkles-outline"
+                        size={48}
+                        color="#CBD5E1"
+                      />
+                      <Text style={styles.emptyText}>
+                        Aucune synthèse disponible
+                      </Text>
+                      <Text style={styles.emptySubtext}>
+                        L'IA créera une synthèse après tes échanges dans la
+                        bulle
+                      </Text>
+                    </View>
+                  )}
+                </View>
+              </View>
+            )}
+          </ScrollView>
+        ) : (
+          <ScrollView contentContainerStyle={styles.scrollContent}>
+            {activeTab === 'bubble' ? (
+              <>
                 {/* Card IA Bulle */}
                 <View style={styles.aiCard}>
                   <View style={styles.aiIllustration}>
@@ -233,12 +498,18 @@ export default function PatientDashboardScreen() {
                   <Text style={styles.aiSubtext}>
                     Un espace sûr pour exprimer tes émotions, disponible 24/7
                   </Text>
-                  <Pressable 
+                  <Pressable
                     style={styles.bubbleButton}
                     onPress={handleOpenChat}
                   >
-                    <Text style={styles.bubbleButtonText}>Entrer dans ma bulle</Text>
-                    <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />
+                    <Text style={styles.bubbleButtonText}>
+                      Entrer dans ma bulle
+                    </Text>
+                    <Ionicons
+                      name="arrow-forward"
+                      size={20}
+                      color="#FFFFFF"
+                    />
                   </Pressable>
                 </View>
 
@@ -247,37 +518,59 @@ export default function PatientDashboardScreen() {
                   <Text style={styles.sectionTitle}>Comment te sens-tu ?</Text>
                   <View style={styles.moodButtons}>
                     <Pressable
-                      style={[styles.moodButton, mood === 1 && styles.moodButtonActive]}
+                      style={[
+                        styles.moodButton,
+                        mood === 1 && styles.moodButtonActive,
+                      ]}
                       onPress={() => handleSelectMood(1)}
                     >
                       <Text style={styles.moodEmoji}>😊</Text>
-                      <Text style={[styles.moodButtonText, mood === 1 && styles.moodButtonTextActive]}>
+                      <Text
+                        style={[
+                          styles.moodButtonText,
+                          mood === 1 && styles.moodButtonTextActive,
+                        ]}
+                      >
                         Bien
                       </Text>
                     </Pressable>
                     <Pressable
-                      style={[styles.moodButton, mood === 2 && styles.moodButtonActive]}
+                      style={[
+                        styles.moodButton,
+                        mood === 2 && styles.moodButtonActive,
+                      ]}
                       onPress={() => handleSelectMood(2)}
                     >
                       <Text style={styles.moodEmoji}>😟</Text>
-                      <Text style={[styles.moodButtonText, mood === 2 && styles.moodButtonTextActive]}>
+                      <Text
+                        style={[
+                          styles.moodButtonText,
+                          mood === 2 && styles.moodButtonTextActive,
+                        ]}
+                      >
                         Difficile
                       </Text>
                     </Pressable>
                     <Pressable
-                      style={[styles.moodButton, mood === 3 && styles.moodButtonActiveDanger]}
+                      style={[
+                        styles.moodButton,
+                        mood === 3 && styles.moodButtonActiveDanger,
+                      ]}
                       onPress={() => handleSelectMood(3)}
                     >
                       <Text style={styles.moodEmoji}>😰</Text>
-                      <Text style={[styles.moodButtonText, mood === 3 && styles.moodButtonTextActive]}>
+                      <Text
+                        style={[
+                          styles.moodButtonText,
+                          mood === 3 && styles.moodButtonTextActive,
+                        ]}
+                      >
                         Urgence
                       </Text>
                     </Pressable>
                   </View>
                 </View>
-              </View>
 
-              <View style={[styles.bubbleRight, isDesktop && styles.bubbleRightDesktop]}>
                 {/* Exercices rapides */}
                 <View style={styles.exercisesSection}>
                   <Text style={styles.sectionTitle}>Exercices rapides</Text>
@@ -286,7 +579,9 @@ export default function PatientDashboardScreen() {
                       <Ionicons name="fitness" size={24} color="#2563EB" />
                     </View>
                     <View style={styles.exerciseContent}>
-                      <Text style={styles.exerciseTitle}>Respiration profonde</Text>
+                      <Text style={styles.exerciseTitle}>
+                        Respiration profonde
+                      </Text>
                       <Text style={styles.exerciseText}>
                         Inspire 4s, retiens 4s, expire 6s
                       </Text>
@@ -297,7 +592,9 @@ export default function PatientDashboardScreen() {
                       <Ionicons name="walk" size={24} color="#2563EB" />
                     </View>
                     <View style={styles.exerciseContent}>
-                      <Text style={styles.exerciseTitle}>Marche de 5 minutes</Text>
+                      <Text style={styles.exerciseTitle}>
+                        Marche de 5 minutes
+                      </Text>
                       <Text style={styles.exerciseText}>
                         Sors prendre l'air pour apaiser ton esprit
                       </Text>
@@ -308,146 +605,199 @@ export default function PatientDashboardScreen() {
                       <Ionicons name="call" size={24} color="#2563EB" />
                     </View>
                     <View style={styles.exerciseContent}>
-                      <Text style={styles.exerciseTitle}>Contacter un proche</Text>
+                      <Text style={styles.exerciseTitle}>
+                        Contacter un proche
+                      </Text>
                       <Text style={styles.exerciseText}>
                         Parler peut vraiment aider à se sentir mieux
                       </Text>
                     </View>
                   </View>
                 </View>
-              </View>
-            </View>
-          ) : (
-            <>
-              {/* Toggle Synthèses */}
-              <View style={styles.reportsToggle}>
-                <Pressable
-                  style={[
-                    styles.reportsToggleButton,
-                    reportsView === 'therapist' && styles.reportsToggleButtonActive
-                  ]}
-                  onPress={() => setReportsView('therapist')}
-                >
-                  <Text style={[
-                    styles.reportsToggleText,
-                    reportsView === 'therapist' && styles.reportsToggleTextActive
-                  ]}>
-                    Thérapeute
-                  </Text>
-                </Pressable>
-                <Pressable
-                  style={[
-                    styles.reportsToggleButton,
-                    reportsView === 'last' && styles.reportsToggleButtonActive
-                  ]}
-                  onPress={() => setReportsView('last')}
-                >
-                  <Text style={[
-                    styles.reportsToggleText,
-                    reportsView === 'last' && styles.reportsToggleTextActive
-                  ]}>
-                    Dernière synthèse
-                  </Text>
-                </Pressable>
-              </View>
+              </>
+            ) : (
+              <>
+                {/* Toggle Synthèses */}
+                <View style={styles.reportsToggle}>
+                  <Pressable
+                    style={[
+                      styles.reportsToggleButton,
+                      reportsView === 'therapist' &&
+                        styles.reportsToggleButtonActive,
+                    ]}
+                    onPress={() => setReportsView('therapist')}
+                  >
+                    <Text
+                      style={[
+                        styles.reportsToggleText,
+                        reportsView === 'therapist' &&
+                          styles.reportsToggleTextActive,
+                      ]}
+                    >
+                      Thérapeute
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    style={[
+                      styles.reportsToggleButton,
+                      reportsView === 'last' &&
+                        styles.reportsToggleButtonActive,
+                    ]}
+                    onPress={() => setReportsView('last')}
+                  >
+                    <Text
+                      style={[
+                        styles.reportsToggleText,
+                        reportsView === 'last' &&
+                          styles.reportsToggleTextActive,
+                      ]}
+                    >
+                      Dernière synthèse
+                    </Text>
+                  </Pressable>
+                </View>
 
-              {/* Contenu synthèses */}
-              {reportsView === 'therapist' ? (
-                <View style={styles.reportsContent}>
-                  <Text style={styles.reportsTitle}>Constats de mon thérapeute</Text>
-                  {reports.length === 0 ? (
-                    <View style={styles.emptyState}>
-                      <Ionicons name="document-text-outline" size={48} color="#CBD5E1" />
-                      <Text style={styles.emptyText}>
-                        Aucun constat pour le moment
-                      </Text>
-                      <Text style={styles.emptySubtext}>
-                        Ton thérapeute peut noter ses observations ici après vos séances
-                      </Text>
-                    </View>
-                  ) : (
-                    reports.map((report) => (
-                      <View key={report._id} style={styles.reportCard}>
-                        <View style={styles.reportHeader}>
-                          <View style={[
-                            styles.reportBadge,
-                            report.from === 'ai' && styles.reportBadgeAi
-                          ]}>
-                            <Text style={styles.reportBadgeText}>
-                              {report.from === 'therapist' ? 'Thérapeute' : 'IA'}
+                {/* Contenu synthèses */}
+                {reportsView === 'therapist' ? (
+                  <View style={styles.reportsContent}>
+                    <Text style={styles.reportsTitle}>
+                      Constats de mon thérapeute
+                    </Text>
+                    {reports.length === 0 ? (
+                      <View style={styles.emptyState}>
+                        <Ionicons
+                          name="document-text-outline"
+                          size={48}
+                          color="#CBD5E1"
+                        />
+                        <Text style={styles.emptyText}>
+                          Aucun constat pour le moment
+                        </Text>
+                        <Text style={styles.emptySubtext}>
+                          Ton thérapeute peut noter ses observations ici après
+                          vos séances
+                        </Text>
+                      </View>
+                    ) : (
+                      reports.map((report) => (
+                        <View key={report._id} style={styles.reportCard}>
+                          <View style={styles.reportHeader}>
+                            <View
+                              style={[
+                                styles.reportBadge,
+                                report.from === 'ai' &&
+                                  styles.reportBadgeAi,
+                              ]}
+                            >
+                              <Text style={styles.reportBadgeText}>
+                                {report.from === 'therapist'
+                                  ? 'Thérapeute'
+                                  : 'IA'}
+                              </Text>
+                            </View>
+                            <Text style={styles.reportDate}>
+                              {formatDateTime(report.date)}
                             </Text>
                           </View>
-                          <Text style={styles.reportDate}>
-                            {formatDateTime(report.date)}
+                          <Text style={styles.reportContent}>
+                            {report.content}
                           </Text>
                         </View>
-                        <Text style={styles.reportContent}>{report.content}</Text>
+                      ))
+                    )}
+                  </View>
+                ) : (
+                  <View style={styles.reportsContent}>
+                    <Text style={styles.reportsTitle}>
+                      Dernière synthèse IA
+                    </Text>
+                    {lastSummary ? (
+                      <View style={styles.summaryCard}>
+                        <View style={styles.summaryIcon}>
+                          <Ionicons
+                            name="sparkles"
+                            size={24}
+                            color="#2563EB"
+                          />
+                        </View>
+                        <Text style={styles.summaryText}>{lastSummary}</Text>
                       </View>
-                    ))
-                  )}
-                </View>
-              ) : (
-                <View style={styles.reportsContent}>
-                  <Text style={styles.reportsTitle}>Dernière synthèse IA</Text>
-                  {lastSummary ? (
-                    <View style={styles.summaryCard}>
-                      <View style={styles.summaryIcon}>
-                        <Ionicons name="sparkles" size={24} color="#2563EB" />
+                    ) : (
+                      <View style={styles.emptyState}>
+                        <Ionicons
+                          name="sparkles-outline"
+                          size={48}
+                          color="#CBD5E1"
+                        />
+                        <Text style={styles.emptyText}>
+                          Aucune synthèse disponible
+                        </Text>
+                        <Text style={styles.emptySubtext}>
+                          L'IA créera une synthèse après tes échanges dans la
+                          bulle
+                        </Text>
                       </View>
-                      <Text style={styles.summaryText}>{lastSummary}</Text>
-                    </View>
-                  ) : (
-                    <View style={styles.emptyState}>
-                      <Ionicons name="sparkles-outline" size={48} color="#CBD5E1" />
-                      <Text style={styles.emptyText}>
-                        Aucune synthèse disponible
-                      </Text>
-                      <Text style={styles.emptySubtext}>
-                        L'IA créera une synthèse après tes échanges dans la bulle
-                      </Text>
-                    </View>
-                  )}
-                </View>
-              )}
-            </>
-          )}
-        </ScrollView>
+                    )}
+                  </View>
+                )}
+              </>
+            )}
+          </ScrollView>
+        )}
 
-        {/* Bottom Tab Menu */}
-        <View style={[styles.bottomTab, isDesktop && styles.bottomTabDesktop]}>
-          <Pressable
-            style={[styles.tabButton, activeTab === 'bubble' && styles.tabButtonActive]}
-            onPress={() => setActiveTab('bubble')}
-          >
-            <Ionicons
-              name={activeTab === 'bubble' ? 'chatbubbles' : 'chatbubbles-outline'}
-              size={24}
-              color={activeTab === 'bubble' ? '#2563EB' : '#64748B'}
-            />
-            <Text style={[
-              styles.tabText,
-              activeTab === 'bubble' && styles.tabTextActive
-            ]}>
-              Bulle
-            </Text>
-          </Pressable>
-          <Pressable
-            style={[styles.tabButton, activeTab === 'reports' && styles.tabButtonActive]}
-            onPress={() => setActiveTab('reports')}
-          >
-            <Ionicons
-              name={activeTab === 'reports' ? 'reader' : 'reader-outline'}
-              size={24}
-              color={activeTab === 'reports' ? '#2563EB' : '#64748B'}
-            />
-            <Text style={[
-              styles.tabText,
-              activeTab === 'reports' && styles.tabTextActive
-            ]}>
-              Synthèses
-            </Text>
-          </Pressable>
-        </View>
+        {/* Bottom Tab Menu (mobile uniquement) */}
+        {!isDesktop && (
+          <View style={styles.bottomTab}>
+            <Pressable
+              style={[
+                styles.tabButton,
+                activeTab === 'bubble' && styles.tabButtonActive,
+              ]}
+              onPress={() => setActiveTab('bubble')}
+            >
+              <Ionicons
+                name={
+                  activeTab === 'bubble'
+                    ? 'chatbubbles'
+                    : 'chatbubbles-outline'
+                }
+                size={24}
+                color={activeTab === 'bubble' ? '#2563EB' : '#64748B'}
+              />
+              <Text
+                style={[
+                  styles.tabText,
+                  activeTab === 'bubble' && styles.tabTextActive,
+                ]}
+              >
+                Bulle
+              </Text>
+            </Pressable>
+            <Pressable
+              style={[
+                styles.tabButton,
+                activeTab === 'reports' && styles.tabButtonActive,
+              ]}
+              onPress={() => setActiveTab('reports')}
+            >
+              <Ionicons
+                name={
+                  activeTab === 'reports' ? 'reader' : 'reader-outline'
+                }
+                size={24}
+                color={activeTab === 'reports' ? '#2563EB' : '#64748B'}
+              />
+              <Text
+                style={[
+                  styles.tabText,
+                  activeTab === 'reports' && styles.tabTextActive,
+                ]}
+              >
+                Synthèses
+              </Text>
+            </Pressable>
+          </View>
+        )}
       </View>
     </>
   );
@@ -481,6 +831,7 @@ const styles = StyleSheet.create({
     maxWidth: 960,
     width: '100%',
     alignSelf: 'center',
+    paddingBottom: 32,
   },
   header: {
     flexDirection: 'row',
@@ -538,6 +889,13 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: '600',
     color: '#EF4444',
+  },
+
+  // Onglets desktop (Bulle / Synthèses)
+  desktopTabs: {
+    maxWidth: 960,
+    width: '100%',
+    alignSelf: 'center',
   },
   
   // Card IA Bulle
@@ -663,6 +1021,39 @@ const styles = StyleSheet.create({
   exercisesSection: {
     marginBottom: 24,
   },
+  bookingCard: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 16,
+    padding: 16,
+    marginBottom: 16,
+    gap: 8,
+  },
+  bookingTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#1E293B',
+  },
+  bookingText: {
+    fontSize: 13,
+    color: '#64748B',
+    lineHeight: 18,
+  },
+  bookingButton: {
+    marginTop: 4,
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    borderRadius: 999,
+    backgroundColor: '#EFF6FF',
+  },
+  bookingButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#2563EB',
+  },
   exerciseItem: {
     flexDirection: 'row',
     backgroundColor: '#F8FAFC',
@@ -729,6 +1120,14 @@ const styles = StyleSheet.create({
   // Reports Content
   reportsContent: {
     gap: 16,
+  },
+  reportsDesktopLayout: {
+    flexDirection: 'row',
+    gap: 24,
+    alignItems: 'flex-start',
+  },
+  reportsDesktopColumn: {
+    flex: 1,
   },
   reportsTitle: {
     fontSize: 16,
@@ -814,16 +1213,11 @@ const styles = StyleSheet.create({
   
   // Bottom Tab
   bottomTab: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
     flexDirection: 'row',
     backgroundColor: '#FFFFFF',
     borderTopWidth: 1,
     borderTopColor: '#F1F5F9',
-    paddingTop: 12,
-    paddingBottom: 20,
+    paddingVertical: 12,
     paddingHorizontal: 20,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -2 },

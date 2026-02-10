@@ -5,6 +5,7 @@ import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 
 import { Button } from '@/components/ui/button';
+import { PrimaryTabs } from '@/components/primary-tabs';
 import { QRCodeDisplay } from '@/components/qr-code-display';
 import { listChatSessionsForTherapist } from '@/lib/chat';
 import { useSession } from '@/lib/session-context';
@@ -91,32 +92,32 @@ export default function TherapistPatientDetailScreen() {
           setConversationId(currentConvId);
           const { messages: messagesData } =
             await api.conversations.getMessages(patientId, currentConvId);
-          setMessages(messagesData || []);
-
+        setMessages(messagesData || []);
+        
           const patientMessages = (messagesData || []).filter(
             (m: any) => m.from === 'patient'
           );
-          if (patientMessages.length > 0) {
-            const lastMsg = patientMessages[patientMessages.length - 1];
-            let messageDate = lastMsg.createdAt;
-            if (!messageDate && lastMsg._id) {
+        if (patientMessages.length > 0) {
+          const lastMsg = patientMessages[patientMessages.length - 1];
+          let messageDate = lastMsg.createdAt;
+          if (!messageDate && lastMsg._id) {
               const objectIdTimestamp =
                 typeof lastMsg._id === 'string'
-                  ? parseInt(lastMsg._id.substring(0, 8), 16) * 1000
+              ? parseInt(lastMsg._id.substring(0, 8), 16) * 1000
                   : lastMsg._id.getTimestamp
                   ? lastMsg._id.getTimestamp().toISOString()
                   : new Date().toISOString();
               messageDate =
                 typeof objectIdTimestamp === 'number'
-                  ? new Date(objectIdTimestamp).toISOString()
-                  : objectIdTimestamp;
-            }
-            setLastPatientMessage({
-              text: lastMsg.text,
-              date: messageDate || new Date().toISOString(),
-            });
-          } else {
-            setLastPatientMessage(null);
+              ? new Date(objectIdTimestamp).toISOString()
+              : objectIdTimestamp;
+          }
+          setLastPatientMessage({
+            text: lastMsg.text,
+            date: messageDate || new Date().toISOString(),
+          });
+        } else {
+          setLastPatientMessage(null);
           }
         }
         
@@ -148,7 +149,7 @@ export default function TherapistPatientDetailScreen() {
 
   const handleBack = () => {
     if (router.canGoBack()) {
-      router.back();
+    router.back();
       return;
     }
 
@@ -328,13 +329,383 @@ export default function TherapistPatientDetailScreen() {
           </View>
         </View>
 
-        {/* Content selon le tab actif */}
-        <ScrollView
-          contentContainerStyle={[
-            styles.scrollContent,
-            isDesktop && styles.scrollContentDesktop,
-          ]}
-        >
+        {/* Onglets principaux (desktop uniquement) */}
+        {isDesktop && (
+          <PrimaryTabs
+            tabs={[
+              { key: 'qr', label: 'QR Code' },
+              { key: 'reports', label: 'Constats' },
+              { key: 'discussion', label: 'Discussion' },
+            ]}
+            activeKey={activeTab}
+            onChange={(key) =>
+              setActiveTab(key as 'qr' | 'reports' | 'discussion')
+            }
+            style={styles.desktopTabs}
+          />
+        )}
+
+        {/* Contenu principal (UI mobile vs UI desktop dédiée) */}
+        {isDesktop ? (
+          <ScrollView
+            contentContainerStyle={[styles.scrollContent, styles.scrollContentDesktop]}
+            showsVerticalScrollIndicator={false}
+          >
+            {activeTab === 'qr' && (
+              <View style={styles.qrSection}>
+                <Text style={styles.sectionTitle}>QR Code d'accès</Text>
+                <View style={styles.qrCard}>
+                  <View style={styles.qrCodeWrapper}>
+                    {qrCodeValue ? (
+                      <QRCodeDisplay
+                        value={qrCodeValue}
+                        size={200}
+                        backgroundColor="#ffffff"
+                        color="#111827"
+                      />
+                    ) : (
+                      <Text style={styles.qrErrorText}>
+                        Impossible de générer le QR code
+                      </Text>
+                    )}
+                  </View>
+                  <View style={styles.qrInfo}>
+                    <View style={styles.qrInfoRow}>
+                      <Ionicons
+                        name="shield-checkmark"
+                        size={20}
+                        color="#2563EB"
+                      />
+                      <Text style={styles.qrInfoText}>Code à usage unique</Text>
+                    </View>
+                    <View style={styles.qrInfoRow}>
+                      <Ionicons name="time" size={20} color="#2563EB" />
+                      <Text style={styles.qrInfoText}>
+                        Expire dans {tokenExpiresIn}
+                      </Text>
+                    </View>
+                  </View>
+                  <Text style={styles.qrDescription}>
+                    Le patient scanne ce QR code avec l'app mobile pour accéder
+                    à sa bulle de manière sécurisée.
+                  </Text>
+                  <Button
+                    title="Régénérer un nouveau code"
+                    variant="secondary"
+                    onPress={handleRegenerateQRCode}
+                  />
+                </View>
+              </View>
+            )}
+
+            {activeTab === 'reports' && (
+              <View style={styles.reportsDesktopLayout}>
+                <View style={styles.reportsDesktopColumn}>
+                  <View style={styles.reportsDesktopHeaderRow}>
+                    <Text style={styles.sectionTitle}>Mes constats</Text>
+                    <Button
+                      title="+ Ajouter un constat"
+                      onPress={() => setShowReportModal(true)}
+                      style={styles.reportsAddButtonDesktop}
+                    />
+                  </View>
+                  <View style={styles.reportsContent}>
+                    {therapistReports.length === 0 ? (
+                      <View style={styles.emptyState}>
+                        <Ionicons
+                          name="document-text-outline"
+                          size={48}
+                          color="#CBD5E1"
+                        />
+                        <Text style={styles.emptyText}>
+                          Aucun constat pour le moment
+                        </Text>
+                        <Text style={styles.emptySubtext}>
+                          Ajoutez vos observations après vos séances
+                        </Text>
+                      </View>
+                    ) : (
+                      therapistReports.map((report) => (
+                        <View key={report._id} style={styles.reportCard}>
+                          <View style={styles.reportHeader}>
+                            <View style={styles.reportBadge}>
+                              <Ionicons
+                                name="person"
+                                size={14}
+                                color="#2563EB"
+                              />
+                              <Text style={styles.reportBadgeText}>
+                                Thérapeute
+                              </Text>
+                            </View>
+                            <Text style={styles.reportDate}>
+                              {formatDateTime(report.date)}
+                            </Text>
+                          </View>
+                          <Text style={styles.reportContent}>
+                            {report.content}
+                          </Text>
+                        </View>
+                      ))
+                    )}
+                  </View>
+                </View>
+
+                <View style={styles.reportsDesktopColumn}>
+                  <Text style={styles.sectionTitle}>Constats IA</Text>
+                  <View style={styles.reportsContent}>
+                    {aiReports.length === 0 ? (
+                      <View style={styles.emptyState}>
+                        <Ionicons
+                          name="sparkles-outline"
+                          size={48}
+                          color="#CBD5E1"
+                        />
+                        <Text style={styles.emptyText}>
+                          Aucun constat IA disponible
+                        </Text>
+                        <Text style={styles.emptySubtext}>
+                          L'IA créera des constats basés sur les échanges du
+                          patient
+                        </Text>
+                      </View>
+                    ) : (
+                      aiReports.map((report) => (
+                        <View key={report._id} style={styles.reportCard}>
+                          <View
+                            style={[styles.reportHeader, styles.reportHeaderAi]}
+                          >
+                            <View
+                              style={[styles.reportBadge, styles.reportBadgeAi]}
+                            >
+                              <Ionicons
+                                name="sparkles"
+                                size={14}
+                                color="#8B5CF6"
+                              />
+                              <Text
+                                style={[
+                                  styles.reportBadgeText,
+                                  styles.reportBadgeTextAi,
+                                ]}
+                              >
+                                IA
+                              </Text>
+                            </View>
+                            <Text style={styles.reportDate}>
+                              {formatDateTime(report.date)}
+                            </Text>
+                          </View>
+                          <Text style={styles.reportContent}>
+                            {report.content}
+                          </Text>
+                        </View>
+                      ))
+                    )}
+                  </View>
+                </View>
+              </View>
+            )}
+
+            {activeTab === 'discussion' && (
+              <View
+                style={[
+                  styles.discussionLayout,
+                  isDesktop && styles.discussionLayoutDesktop,
+                ]}
+              >
+                <View
+                  style={[
+                    styles.discussionLeft,
+                    isDesktop && styles.discussionLeftDesktop,
+                  ]}
+                >
+                  <View style={styles.moodCard}>
+                    <Text style={styles.moodTitle}>État actuel du patient</Text>
+                    <View style={styles.moodIndicator}>
+                      {actualMood === '1' && (
+                        <>
+                          <Text style={styles.moodEmoji}>😊</Text>
+                          <Text style={styles.moodText}>Plutôt bien</Text>
+                        </>
+                      )}
+                      {actualMood === '2' && (
+                        <>
+                          <Text style={styles.moodEmoji}>😟</Text>
+                          <Text style={styles.moodText}>En difficulté</Text>
+                        </>
+                      )}
+                      {actualMood === '3' && (
+                        <>
+                          <Text style={styles.moodEmoji}>😰</Text>
+                          <Text
+                            style={[
+                              styles.moodText,
+                              styles.moodTextDanger,
+                            ]}
+                          >
+                            Crise / Urgence
+                          </Text>
+                        </>
+                      )}
+                      {!actualMood && (
+                        <Text style={styles.moodTextEmpty}>Non renseigné</Text>
+                      )}
+                    </View>
+                  </View>
+
+                  {lastPatientMessage && (
+                    <View style={styles.lastMessageCard}>
+                      <View style={styles.lastMessageHeader}>
+                        <Ionicons
+                          name="chatbubble"
+                          size={20}
+                          color="#2563EB"
+                        />
+                        <Text style={styles.lastMessageTitle}>
+                          Dernier message du patient
+                        </Text>
+                      </View>
+                      <Text style={styles.lastMessageText}>
+                        {lastPatientMessage.text}
+                      </Text>
+                      <Text style={styles.lastMessageDate}>
+                        {formatDateTime(lastPatientMessage.date)}
+                      </Text>
+                    </View>
+                  )}
+
+                  <Button
+                    title="+ Envoyer un message"
+                    onPress={() => setShowMessageModal(true)}
+                    style={{ marginTop: 16 }}
+                  />
+                </View>
+
+                <View
+                  style={[
+                    styles.discussionRight,
+                    isDesktop && styles.discussionRightDesktop,
+                  ]}
+                >
+                  {/* Liste des conversations de la bulle */}
+                  <View style={styles.conversationsRow}>
+                    <Text style={styles.messagesTitle}>Conversations</Text>
+                    <View style={styles.conversationsList}>
+                      {conversations.length === 0 ? (
+                        <Text style={styles.conversationChipEmpty}>
+                          Aucune conversation encore.
+                        </Text>
+                      ) : (
+                        conversations.map((conv) => (
+                          <Pressable
+                            key={conv.id}
+                            onPress={async () => {
+                              if (!patient) return;
+                              if (conv.id === conversationId) return;
+                              try {
+                                setConversationId(conv.id);
+                                const { messages: convMessages } =
+                                  await api.conversations.getMessages(
+                                    patient.id,
+                                    conv.id
+                                  );
+                                setMessages(convMessages || []);
+                              } catch (error) {
+                                console.error(
+                                  'Erreur chargement conversation:',
+                                  error
+                                );
+                                Alert.alert(
+                                  'Erreur',
+                                  'Impossible de charger cette conversation.'
+                                );
+                              }
+                            }}
+                            style={[
+                              styles.conversationChip,
+                              conv.id === conversationId &&
+                                styles.conversationChipActive,
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.conversationChipText,
+                                conv.id === conversationId &&
+                                  styles.conversationChipTextActive,
+                              ]}
+                              numberOfLines={1}
+                            >
+                              {new Date(conv.createdAt).toLocaleDateString(
+                                'fr-FR',
+                                { day: '2-digit', month: '2-digit' }
+                              )}
+                            </Text>
+                          </Pressable>
+                        ))
+                      )}
+                    </View>
+                  </View>
+
+                  <View style={styles.messagesContent}>
+                    <Text style={styles.messagesTitle}>
+                      Historique des échanges
+                    </Text>
+                    {messages.length === 0 ? (
+                      <View style={styles.emptyState}>
+                        <Ionicons
+                          name="chatbubbles-outline"
+                          size={48}
+                          color="#CBD5E1"
+                        />
+                        <Text style={styles.emptyText}>Aucun message</Text>
+                      </View>
+                    ) : (
+                      messages.map((msg, idx) => (
+                        <View
+                          key={idx}
+                          style={[
+                            styles.messageCard,
+                            msg.from === 'therapist' &&
+                              styles.messageCardTherapist,
+                          ]}
+                        >
+                          <View style={styles.messageHeader}>
+                            <View style={styles.messageBadge}>
+                              <Ionicons
+                                name={
+                                  msg.from === 'patient' ? 'person' : 'medkit'
+                                }
+                                size={12}
+                                color={
+                                  msg.from === 'patient'
+                                    ? '#2563EB'
+                                    : '#8B5CF6'
+                                }
+                              />
+                              <Text style={styles.messageBadgeText}>
+                                {msg.from === 'patient'
+                                  ? 'Patient'
+                                  : msg.from === 'therapist'
+                                  ? 'Thérapeute'
+                                  : 'IA'}
+                              </Text>
+                            </View>
+                            <Text style={styles.messageDate}>
+                              {formatDateTime(msg.createdAt || msg.date)}
+                            </Text>
+                          </View>
+                          <Text style={styles.messageText}>{msg.text}</Text>
+                        </View>
+                      ))
+                    )}
+                  </View>
+                </View>
+              </View>
+            )}
+          </ScrollView>
+        ) : (
+        <ScrollView contentContainerStyle={styles.scrollContent}>
           {activeTab === 'qr' && (
             <View style={styles.qrSection}>
               <Text style={styles.sectionTitle}>QR Code d'accès</Text>
@@ -348,21 +719,30 @@ export default function TherapistPatientDetailScreen() {
                       color="#111827"
                     />
                   ) : (
-                    <Text style={styles.qrErrorText}>Impossible de générer le QR code</Text>
+                      <Text style={styles.qrErrorText}>
+                        Impossible de générer le QR code
+                      </Text>
                   )}
                 </View>
                 <View style={styles.qrInfo}>
                   <View style={styles.qrInfoRow}>
-                    <Ionicons name="shield-checkmark" size={20} color="#2563EB" />
+                      <Ionicons
+                        name="shield-checkmark"
+                        size={20}
+                        color="#2563EB"
+                      />
                     <Text style={styles.qrInfoText}>Code à usage unique</Text>
                   </View>
                   <View style={styles.qrInfoRow}>
                     <Ionicons name="time" size={20} color="#2563EB" />
-                    <Text style={styles.qrInfoText}>Expire dans {tokenExpiresIn}</Text>
+                      <Text style={styles.qrInfoText}>
+                        Expire dans {tokenExpiresIn}
+                      </Text>
                   </View>
                 </View>
                 <Text style={styles.qrDescription}>
-                  Le patient scanne ce QR code avec l'app mobile pour accéder à sa bulle de manière sécurisée.
+                    Le patient scanne ce QR code avec l'app mobile pour accéder
+                    à sa bulle de manière sécurisée.
                 </Text>
                 <Button 
                   title="Régénérer un nouveau code" 
@@ -380,28 +760,35 @@ export default function TherapistPatientDetailScreen() {
                 <Pressable
                   style={[
                     styles.reportsToggleButton,
-                    reportsView === 'therapist' && styles.reportsToggleButtonActive
+                      reportsView === 'therapist' &&
+                        styles.reportsToggleButtonActive,
                   ]}
                   onPress={() => setReportsView('therapist')}
                 >
-                  <Text style={[
+                    <Text
+                      style={[
                     styles.reportsToggleText,
-                    reportsView === 'therapist' && styles.reportsToggleTextActive
-                  ]}>
+                        reportsView === 'therapist' &&
+                          styles.reportsToggleTextActive,
+                      ]}
+                    >
                     Mes constats
                   </Text>
                 </Pressable>
                 <Pressable
                   style={[
                     styles.reportsToggleButton,
-                    reportsView === 'ai' && styles.reportsToggleButtonActive
+                      reportsView === 'ai' && styles.reportsToggleButtonActive,
                   ]}
                   onPress={() => setReportsView('ai')}
                 >
-                  <Text style={[
+                    <Text
+                      style={[
                     styles.reportsToggleText,
-                    reportsView === 'ai' && styles.reportsToggleTextActive
-                  ]}>
+                        reportsView === 'ai' &&
+                          styles.reportsToggleTextActive,
+                      ]}
+                    >
                     Constats IA
                   </Text>
                 </Pressable>
@@ -421,8 +808,14 @@ export default function TherapistPatientDetailScreen() {
                 {reportsView === 'therapist' ? (
                   therapistReports.length === 0 ? (
                     <View style={styles.emptyState}>
-                      <Ionicons name="document-text-outline" size={48} color="#CBD5E1" />
-                      <Text style={styles.emptyText}>Aucun constat pour le moment</Text>
+                        <Ionicons
+                          name="document-text-outline"
+                          size={48}
+                          color="#CBD5E1"
+                        />
+                        <Text style={styles.emptyText}>
+                          Aucun constat pour le moment
+                        </Text>
                       <Text style={styles.emptySubtext}>
                         Ajoutez vos observations après vos séances
                       </Text>
@@ -432,202 +825,266 @@ export default function TherapistPatientDetailScreen() {
                       <View key={report._id} style={styles.reportCard}>
                         <View style={styles.reportHeader}>
                           <View style={styles.reportBadge}>
-                            <Ionicons name="person" size={14} color="#2563EB" />
-                            <Text style={styles.reportBadgeText}>Thérapeute</Text>
+                              <Ionicons
+                                name="person"
+                                size={14}
+                                color="#2563EB"
+                              />
+                              <Text style={styles.reportBadgeText}>
+                                Thérapeute
+                              </Text>
                           </View>
                           <Text style={styles.reportDate}>
                             {formatDateTime(report.date)}
                           </Text>
                         </View>
-                        <Text style={styles.reportContent}>{report.content}</Text>
+                          <Text style={styles.reportContent}>
+                            {report.content}
+                          </Text>
                       </View>
                     ))
                   )
-                ) : (
-                  aiReports.length === 0 ? (
+                  ) : aiReports.length === 0 ? (
                     <View style={styles.emptyState}>
-                      <Ionicons name="sparkles-outline" size={48} color="#CBD5E1" />
-                      <Text style={styles.emptyText}>Aucun constat IA disponible</Text>
+                      <Ionicons
+                        name="sparkles-outline"
+                        size={48}
+                        color="#CBD5E1"
+                      />
+                      <Text style={styles.emptyText}>
+                        Aucun constat IA disponible
+                      </Text>
                       <Text style={styles.emptySubtext}>
-                        L'IA créera des constats basés sur les échanges du patient
+                        L'IA créera des constats basés sur les échanges du
+                        patient
                       </Text>
                     </View>
                   ) : (
                     aiReports.map((report) => (
                       <View key={report._id} style={styles.reportCard}>
                         <View style={styles.reportHeader}>
-                          <View style={[styles.reportBadge, styles.reportBadgeAi]}>
-                            <Ionicons name="sparkles" size={14} color="#8B5CF6" />
-                            <Text style={[styles.reportBadgeText, styles.reportBadgeTextAi]}>IA</Text>
+                          <View
+                            style={[styles.reportBadge, styles.reportBadgeAi]}
+                          >
+                            <Ionicons
+                              name="sparkles"
+                              size={14}
+                              color="#8B5CF6"
+                            />
+                            <Text
+                              style={[
+                                styles.reportBadgeText,
+                                styles.reportBadgeTextAi,
+                              ]}
+                            >
+                              IA
+                            </Text>
                           </View>
                           <Text style={styles.reportDate}>
                             {formatDateTime(report.date)}
                           </Text>
                         </View>
-                        <Text style={styles.reportContent}>{report.content}</Text>
+                        <Text style={styles.reportContent}>
+                          {report.content}
+                        </Text>
                       </View>
                     ))
-                  )
                 )}
               </View>
             </>
           )}
 
           {activeTab === 'discussion' && (
-            <View style={[styles.discussionLayout, isDesktop && styles.discussionLayoutDesktop]}>
-              <View style={[styles.discussionLeft, isDesktop && styles.discussionLeftDesktop]}>
-                <View style={styles.moodCard}>
-                  <Text style={styles.moodTitle}>État actuel du patient</Text>
-                  <View style={styles.moodIndicator}>
-                    {actualMood === '1' && (
-                      <>
-                        <Text style={styles.moodEmoji}>😊</Text>
-                        <Text style={styles.moodText}>Plutôt bien</Text>
-                      </>
-                    )}
-                    {actualMood === '2' && (
-                      <>
-                        <Text style={styles.moodEmoji}>😟</Text>
-                        <Text style={styles.moodText}>En difficulté</Text>
-                      </>
-                    )}
-                    {actualMood === '3' && (
-                      <>
-                        <Text style={styles.moodEmoji}>😰</Text>
-                        <Text style={[styles.moodText, styles.moodTextDanger]}>Crise / Urgence</Text>
-                      </>
-                    )}
-                    {!actualMood && (
-                      <Text style={styles.moodTextEmpty}>Non renseigné</Text>
-                    )}
-                  </View>
-                </View>
-
-                {lastPatientMessage && (
-                  <View style={styles.lastMessageCard}>
-                    <View style={styles.lastMessageHeader}>
-                      <Ionicons name="chatbubble" size={20} color="#2563EB" />
-                      <Text style={styles.lastMessageTitle}>Dernier message du patient</Text>
-                    </View>
-                    <Text style={styles.lastMessageText}>{lastPatientMessage.text}</Text>
-                    <Text style={styles.lastMessageDate}>
-                      {formatDateTime(lastPatientMessage.date)}
-                    </Text>
-                  </View>
-                )}
-
-                <Button 
-                  title="+ Envoyer un message" 
-                  onPress={() => setShowMessageModal(true)}
-                  style={{ marginTop: 16 }}
-                />
-              </View>
-
-              <View style={[styles.discussionRight, isDesktop && styles.discussionRightDesktop]}>
-                {/* Liste des conversations de la bulle */}
-                <View style={styles.conversationsRow}>
-                  <Text style={styles.messagesTitle}>Conversations</Text>
-                  <View style={styles.conversationsList}>
-                    {conversations.length === 0 ? (
-                      <Text style={styles.conversationChipEmpty}>
-                        Aucune conversation encore.
-                      </Text>
-                    ) : (
-                      conversations.map((conv) => (
-                        <Pressable
-                          key={conv.id}
-                          onPress={async () => {
-                            if (!patient) return;
-                            if (conv.id === conversationId) return;
-                            try {
-                              setConversationId(conv.id);
-                              const { messages: convMessages } =
-                                await api.conversations.getMessages(
-                                  patient.id,
-                                  conv.id
-                                );
-                              setMessages(convMessages || []);
-                            } catch (error) {
-                              console.error(
-                                'Erreur chargement conversation:',
-                                error
-                              );
-                              Alert.alert(
-                                'Erreur',
-                                'Impossible de charger cette conversation.'
-                              );
-                            }
-                          }}
-                          style={[
-                            styles.conversationChip,
-                            conv.id === conversationId &&
-                              styles.conversationChipActive,
-                          ]}
-                        >
+              <View style={styles.discussionLayout}>
+                <View style={styles.discussionLeft}>
+              <View style={styles.moodCard}>
+                <Text style={styles.moodTitle}>État actuel du patient</Text>
+                <View style={styles.moodIndicator}>
+                  {actualMood === '1' && (
+                    <>
+                      <Text style={styles.moodEmoji}>😊</Text>
+                      <Text style={styles.moodText}>Plutôt bien</Text>
+                    </>
+                  )}
+                  {actualMood === '2' && (
+                    <>
+                      <Text style={styles.moodEmoji}>😟</Text>
+                      <Text style={styles.moodText}>En difficulté</Text>
+                    </>
+                  )}
+                  {actualMood === '3' && (
+                    <>
+                      <Text style={styles.moodEmoji}>😰</Text>
                           <Text
                             style={[
-                              styles.conversationChipText,
-                              conv.id === conversationId &&
-                                styles.conversationChipTextActive,
+                              styles.moodText,
+                              styles.moodTextDanger,
                             ]}
-                            numberOfLines={1}
                           >
-                            {new Date(conv.createdAt).toLocaleDateString(
-                              'fr-FR',
-                              { day: '2-digit', month: '2-digit' }
-                            )}
+                            Crise / Urgence
                           </Text>
-                        </Pressable>
-                      ))
-                    )}
-                  </View>
-                </View>
-
-                <View style={styles.messagesContent}>
-                  <Text style={styles.messagesTitle}>Historique des échanges</Text>
-                  {messages.length === 0 ? (
-                    <View style={styles.emptyState}>
-                      <Ionicons name="chatbubbles-outline" size={48} color="#CBD5E1" />
-                      <Text style={styles.emptyText}>Aucun message</Text>
-                    </View>
-                  ) : (
-                    messages.map((msg, idx) => (
-                      <View 
-                        key={idx} 
-                        style={[
-                          styles.messageCard,
-                          msg.from === 'therapist' && styles.messageCardTherapist
-                        ]}
-                      >
-                        <View style={styles.messageHeader}>
-                          <View style={styles.messageBadge}>
-                            <Ionicons 
-                              name={msg.from === 'patient' ? 'person' : 'medkit'} 
-                              size={12} 
-                              color={msg.from === 'patient' ? '#2563EB' : '#8B5CF6'} 
-                            />
-                            <Text style={styles.messageBadgeText}>
-                              {msg.from === 'patient' ? 'Patient' : msg.from === 'therapist' ? 'Thérapeute' : 'IA'}
-                            </Text>
-                          </View>
-                          <Text style={styles.messageDate}>
-                            {formatDateTime(msg.createdAt || msg.date)}
-                          </Text>
-                        </View>
-                        <Text style={styles.messageText}>{msg.text}</Text>
-                      </View>
-                    ))
+                    </>
+                  )}
+                  {!actualMood && (
+                    <Text style={styles.moodTextEmpty}>Non renseigné</Text>
                   )}
                 </View>
+              </View>
+
+              {lastPatientMessage && (
+                <View style={styles.lastMessageCard}>
+                  <View style={styles.lastMessageHeader}>
+                        <Ionicons
+                          name="chatbubble"
+                          size={20}
+                          color="#2563EB"
+                        />
+                        <Text style={styles.lastMessageTitle}>
+                          Dernier message du patient
+                        </Text>
+                  </View>
+                      <Text style={styles.lastMessageText}>
+                        {lastPatientMessage.text}
+                      </Text>
+                  <Text style={styles.lastMessageDate}>
+                    {formatDateTime(lastPatientMessage.date)}
+                  </Text>
+                </View>
+              )}
+
+              <Button 
+                title="+ Envoyer un message" 
+                onPress={() => setShowMessageModal(true)}
+                style={{ marginTop: 16 }}
+              />
+                </View>
+
+                <View style={styles.discussionRight}>
+                  <View style={styles.conversationsRow}>
+                    <Text style={styles.messagesTitle}>Conversations</Text>
+                    <View style={styles.conversationsList}>
+                      {conversations.length === 0 ? (
+                        <Text style={styles.conversationChipEmpty}>
+                          Aucune conversation encore.
+                        </Text>
+                      ) : (
+                        conversations.map((conv) => (
+                          <Pressable
+                            key={conv.id}
+                            onPress={async () => {
+                              if (!patient) return;
+                              if (conv.id === conversationId) return;
+                              try {
+                                setConversationId(conv.id);
+                                const { messages: convMessages } =
+                                  await api.conversations.getMessages(
+                                    patient.id,
+                                    conv.id
+                                  );
+                                setMessages(convMessages || []);
+                              } catch (error) {
+                                console.error(
+                                  'Erreur chargement conversation:',
+                                  error
+                                );
+                                Alert.alert(
+                                  'Erreur',
+                                  'Impossible de charger cette conversation.'
+                                );
+                              }
+                            }}
+                            style={[
+                              styles.conversationChip,
+                              conv.id === conversationId &&
+                                styles.conversationChipActive,
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.conversationChipText,
+                                conv.id === conversationId &&
+                                  styles.conversationChipTextActive,
+                              ]}
+                              numberOfLines={1}
+                            >
+                              {new Date(conv.createdAt).toLocaleDateString(
+                                'fr-FR',
+                                { day: '2-digit', month: '2-digit' }
+                              )}
+                            </Text>
+                          </Pressable>
+                        ))
+                      )}
+                    </View>
+                  </View>
+
+              <View style={styles.messagesContent}>
+                    <Text style={styles.messagesTitle}>
+                      Historique des échanges
+                    </Text>
+                {messages.length === 0 ? (
+                  <View style={styles.emptyState}>
+                        <Ionicons
+                          name="chatbubbles-outline"
+                          size={48}
+                          color="#CBD5E1"
+                        />
+                    <Text style={styles.emptyText}>Aucun message</Text>
+                  </View>
+                ) : (
+                  messages.map((msg, idx) => (
+                    <View 
+                      key={idx} 
+                      style={[
+                        styles.messageCard,
+                            msg.from === 'therapist' &&
+                              styles.messageCardTherapist,
+                      ]}
+                    >
+                      <View style={styles.messageHeader}>
+                        <View style={styles.messageBadge}>
+                          <Ionicons 
+                                name={
+                                  msg.from === 'patient' ? 'person' : 'medkit'
+                                }
+                            size={12} 
+                                color={
+                                  msg.from === 'patient'
+                                    ? '#2563EB'
+                                    : '#8B5CF6'
+                                }
+                          />
+                          <Text style={styles.messageBadgeText}>
+                                {msg.from === 'patient'
+                                  ? 'Patient'
+                                  : msg.from === 'therapist'
+                                  ? 'Thérapeute'
+                                  : 'IA'}
+                          </Text>
+                        </View>
+                        <Text style={styles.messageDate}>
+                          {formatDateTime(msg.createdAt || msg.date)}
+                        </Text>
+                      </View>
+                      <Text style={styles.messageText}>{msg.text}</Text>
+                    </View>
+                  ))
+                )}
+                  </View>
               </View>
             </View>
           )}
         </ScrollView>
+        )}
 
-        {/* Bottom Tab Menu */}
-        <View style={[styles.bottomTab, isDesktop && styles.bottomTabDesktop]}>
+        {/* Bottom Tab Menu (mobile uniquement) */}
+        {!isDesktop && (
+        <View style={styles.bottomTab}>
           <Pressable
-            style={[styles.tabButton, activeTab === 'qr' && styles.tabButtonActive]}
+              style={[
+                styles.tabButton,
+                activeTab === 'qr' && styles.tabButtonActive,
+              ]}
             onPress={() => setActiveTab('qr')}
           >
             <Ionicons
@@ -635,46 +1092,67 @@ export default function TherapistPatientDetailScreen() {
               size={24}
               color={activeTab === 'qr' ? '#2563EB' : '#64748B'}
             />
-            <Text style={[
+              <Text
+                style={[
               styles.tabText,
-              activeTab === 'qr' && styles.tabTextActive
-            ]}>
+                  activeTab === 'qr' && styles.tabTextActive,
+                ]}
+              >
               QR Code
             </Text>
           </Pressable>
           <Pressable
-            style={[styles.tabButton, activeTab === 'reports' && styles.tabButtonActive]}
+              style={[
+                styles.tabButton,
+                activeTab === 'reports' && styles.tabButtonActive,
+              ]}
             onPress={() => setActiveTab('reports')}
           >
             <Ionicons
-              name={activeTab === 'reports' ? 'document-text' : 'document-text-outline'}
+                name={
+                  activeTab === 'reports'
+                    ? 'document-text'
+                    : 'document-text-outline'
+                }
               size={24}
               color={activeTab === 'reports' ? '#2563EB' : '#64748B'}
             />
-            <Text style={[
+              <Text
+                style={[
               styles.tabText,
-              activeTab === 'reports' && styles.tabTextActive
-            ]}>
+                  activeTab === 'reports' && styles.tabTextActive,
+                ]}
+              >
               Constats
             </Text>
           </Pressable>
           <Pressable
-            style={[styles.tabButton, activeTab === 'discussion' && styles.tabButtonActive]}
+              style={[
+                styles.tabButton,
+                activeTab === 'discussion' && styles.tabButtonActive,
+              ]}
             onPress={() => setActiveTab('discussion')}
           >
             <Ionicons
-              name={activeTab === 'discussion' ? 'chatbubbles' : 'chatbubbles-outline'}
+                name={
+                  activeTab === 'discussion'
+                    ? 'chatbubbles'
+                    : 'chatbubbles-outline'
+                }
               size={24}
               color={activeTab === 'discussion' ? '#2563EB' : '#64748B'}
             />
-            <Text style={[
+              <Text
+                style={[
               styles.tabText,
-              activeTab === 'discussion' && styles.tabTextActive
-            ]}>
+                  activeTab === 'discussion' && styles.tabTextActive,
+                ]}
+              >
               Discussion
             </Text>
           </Pressable>
         </View>
+        )}
 
         {/* Modal Ajouter un constat */}
         <Modal
@@ -824,6 +1302,12 @@ const styles = StyleSheet.create({
     maxWidth: 960,
     width: '100%',
     alignSelf: 'center',
+    paddingBottom: 32,
+  },
+  desktopTabs: {
+    maxWidth: 960,
+    width: '100%',
+    alignSelf: 'center',
   },
   
   // QR Section
@@ -912,6 +1396,20 @@ const styles = StyleSheet.create({
   reportsContent: {
     gap: 12,
   },
+  reportsDesktopLayout: {
+    flexDirection: 'row',
+    gap: 24,
+    alignItems: 'flex-start',
+  },
+  reportsDesktopColumn: {
+    flex: 1,
+  },
+  reportsDesktopHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
   reportCard: {
     backgroundColor: '#F8FAFC',
     borderRadius: 16,
@@ -951,6 +1449,15 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#475569',
     lineHeight: 20,
+  },
+  reportsAddRowDesktop: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    marginBottom: 16,
+  },
+  reportsAddButtonDesktop: {
+    height: 40,
+    paddingHorizontal: 16,
   },
   
   // Discussion Section
@@ -1133,16 +1640,11 @@ const styles = StyleSheet.create({
   
   // Bottom Tab
   bottomTab: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
     flexDirection: 'row',
     backgroundColor: '#FFFFFF',
     borderTopWidth: 1,
     borderTopColor: '#F1F5F9',
-    paddingTop: 12,
-    paddingBottom: 20,
+    paddingVertical: 12,
     paddingHorizontal: 20,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -2 },
