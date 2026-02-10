@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, View, Pressable, Linking, Text, StatusBar, Alert, Platform } from 'react-native';
+import { ScrollView, StyleSheet, View, Pressable, Linking, Text, StatusBar, Alert, Platform, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import { Button } from '@/components/ui/button';
@@ -29,6 +29,7 @@ interface PatientInfo {
 export default function PatientDashboardScreen() {
   const router = useRouter();
   const { session, signOut, loading: sessionLoading } = useSession();
+  const { width } = useWindowDimensions();
   const [patientInfo, setPatientInfo] = useState<PatientInfo | null>(null);
   const [reports, setReports] = useState<Report[]>([]);
   const [lastSummary, setLastSummary] = useState<string | null>(null);
@@ -40,6 +41,9 @@ export default function PatientDashboardScreen() {
   // Navigation state
   const [activeTab, setActiveTab] = useState<'bubble' | 'reports'>('bubble');
   const [reportsView, setReportsView] = useState<'therapist' | 'last'>('therapist');
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  const isDesktop = Platform.OS === 'web' && width >= 1024;
 
   useEffect(() => {
     if (sessionLoading) return;
@@ -117,6 +121,7 @@ export default function PatientDashboardScreen() {
   };
 
   const handleSignOut = async () => {
+    setMenuOpen(false);
     await signOut();
     router.replace('/');
   };
@@ -177,10 +182,10 @@ export default function PatientDashboardScreen() {
   return (
     <>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-      <View style={styles.container}>
+      <View style={[styles.container, isDesktop && styles.containerDesktop]}>
         <View style={styles.safeArea} />
         {/* Header */}
-        <View style={styles.header}>
+        <View style={[styles.header, isDesktop && styles.headerDesktop]}>
           <View style={styles.headerLeft}>
             <Text style={styles.titleText}>
               {activeTab === 'bubble' ? 'Ma Bulle' : 'Synthèses'}
@@ -189,105 +194,129 @@ export default function PatientDashboardScreen() {
               Bonjour {patientInfo?.username || 'toi'} 👋
             </Text>
           </View>
-          <Pressable onPress={handleSignOut} hitSlop={10}>
-            <Text style={styles.logoutText}>Déconnexion</Text>
-          </Pressable>
+          {isDesktop ? (
+            <Pressable onPress={handleSignOut} hitSlop={10}>
+              <Text style={styles.logoutText}>Déconnexion</Text>
+            </Pressable>
+          ) : (
+            <Pressable onPress={() => setMenuOpen(!menuOpen)} hitSlop={10} style={styles.menuButton}>
+              <Ionicons name={menuOpen ? 'close' : 'menu'} size={28} color="#1E293B" />
+            </Pressable>
+          )}
         </View>
 
+        {!isDesktop && menuOpen && (
+          <View style={styles.menuCard}>
+            <Pressable style={styles.menuItem} onPress={handleSignOut}>
+              <Ionicons name="log-out-outline" size={20} color="#EF4444" />
+              <Text style={styles.menuItemTextDanger}>Déconnexion</Text>
+            </Pressable>
+          </View>
+        )}
+
         {/* Content selon le tab actif */}
-        <ScrollView contentContainerStyle={styles.scrollContent}>
+        <ScrollView
+          contentContainerStyle={[
+            styles.scrollContent,
+            isDesktop && styles.scrollContentDesktop,
+          ]}
+        >
           {activeTab === 'bubble' ? (
-            <>
-              {/* Card IA Bulle */}
-              <View style={styles.aiCard}>
-                <View style={styles.aiIllustration}>
-                  <Text style={styles.aiEmoji}>🤖</Text>
+            <View style={[styles.bubbleLayout, isDesktop && styles.bubbleLayoutDesktop]}>
+              <View style={[styles.bubbleLeft, isDesktop && styles.bubbleLeftDesktop]}>
+                {/* Card IA Bulle */}
+                <View style={styles.aiCard}>
+                  <View style={styles.aiIllustration}>
+                    <Text style={styles.aiEmoji}>🤖</Text>
+                  </View>
+                  <Text style={styles.aiName}>Assistant IA</Text>
+                  <Text style={styles.aiSubtext}>
+                    Un espace sûr pour exprimer tes émotions, disponible 24/7
+                  </Text>
+                  <Pressable 
+                    style={styles.bubbleButton}
+                    onPress={handleOpenChat}
+                  >
+                    <Text style={styles.bubbleButtonText}>Entrer dans ma bulle</Text>
+                    <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />
+                  </Pressable>
                 </View>
-                <Text style={styles.aiName}>Assistant IA</Text>
-                <Text style={styles.aiSubtext}>
-                  Un espace sûr pour exprimer tes émotions, disponible 24/7
-                </Text>
-                <Pressable 
-                  style={styles.bubbleButton}
-                  onPress={handleOpenChat}
-                >
-                  <Text style={styles.bubbleButtonText}>Entrer dans ma bulle</Text>
-                  <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />
-                </Pressable>
+
+                {/* Comment te sens-tu ? */}
+                <View style={styles.moodSection}>
+                  <Text style={styles.sectionTitle}>Comment te sens-tu ?</Text>
+                  <View style={styles.moodButtons}>
+                    <Pressable
+                      style={[styles.moodButton, mood === 1 && styles.moodButtonActive]}
+                      onPress={() => handleSelectMood(1)}
+                    >
+                      <Text style={styles.moodEmoji}>😊</Text>
+                      <Text style={[styles.moodButtonText, mood === 1 && styles.moodButtonTextActive]}>
+                        Bien
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      style={[styles.moodButton, mood === 2 && styles.moodButtonActive]}
+                      onPress={() => handleSelectMood(2)}
+                    >
+                      <Text style={styles.moodEmoji}>😟</Text>
+                      <Text style={[styles.moodButtonText, mood === 2 && styles.moodButtonTextActive]}>
+                        Difficile
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      style={[styles.moodButton, mood === 3 && styles.moodButtonActiveDanger]}
+                      onPress={() => handleSelectMood(3)}
+                    >
+                      <Text style={styles.moodEmoji}>😰</Text>
+                      <Text style={[styles.moodButtonText, mood === 3 && styles.moodButtonTextActive]}>
+                        Urgence
+                      </Text>
+                    </Pressable>
+                  </View>
+                </View>
               </View>
 
-              {/* Comment te sens-tu ? */}
-              <View style={styles.moodSection}>
-                <Text style={styles.sectionTitle}>Comment te sens-tu ?</Text>
-                <View style={styles.moodButtons}>
-                  <Pressable
-                    style={[styles.moodButton, mood === 1 && styles.moodButtonActive]}
-                    onPress={() => handleSelectMood(1)}
-                  >
-                    <Text style={styles.moodEmoji}>😊</Text>
-                    <Text style={[styles.moodButtonText, mood === 1 && styles.moodButtonTextActive]}>
-                      Bien
-                    </Text>
-                  </Pressable>
-                  <Pressable
-                    style={[styles.moodButton, mood === 2 && styles.moodButtonActive]}
-                    onPress={() => handleSelectMood(2)}
-                  >
-                    <Text style={styles.moodEmoji}>😟</Text>
-                    <Text style={[styles.moodButtonText, mood === 2 && styles.moodButtonTextActive]}>
-                      Difficile
-                    </Text>
-                  </Pressable>
-                  <Pressable
-                    style={[styles.moodButton, mood === 3 && styles.moodButtonActiveDanger]}
-                    onPress={() => handleSelectMood(3)}
-                  >
-                    <Text style={styles.moodEmoji}>😰</Text>
-                    <Text style={[styles.moodButtonText, mood === 3 && styles.moodButtonTextActive]}>
-                      Urgence
-                    </Text>
-                  </Pressable>
-                </View>
-              </View>
-
-              {/* Exercices rapides */}
-              <View style={styles.exercisesSection}>
-                <Text style={styles.sectionTitle}>Exercices rapides</Text>
-                <View style={styles.exerciseItem}>
-                  <View style={styles.exerciseIcon}>
-                    <Ionicons name="fitness" size={24} color="#2563EB" />
+              <View style={[styles.bubbleRight, isDesktop && styles.bubbleRightDesktop]}>
+                {/* Exercices rapides */}
+                <View style={styles.exercisesSection}>
+                  <Text style={styles.sectionTitle}>Exercices rapides</Text>
+                  <View style={styles.exerciseItem}>
+                    <View style={styles.exerciseIcon}>
+                      <Ionicons name="fitness" size={24} color="#2563EB" />
+                    </View>
+                    <View style={styles.exerciseContent}>
+                      <Text style={styles.exerciseTitle}>Respiration profonde</Text>
+                      <Text style={styles.exerciseText}>
+                        Inspire 4s, retiens 4s, expire 6s
+                      </Text>
+                    </View>
                   </View>
-                  <View style={styles.exerciseContent}>
-                    <Text style={styles.exerciseTitle}>Respiration profonde</Text>
-                    <Text style={styles.exerciseText}>
-                      Inspire 4s, retiens 4s, expire 6s
-                    </Text>
+                  <View style={styles.exerciseItem}>
+                    <View style={styles.exerciseIcon}>
+                      <Ionicons name="walk" size={24} color="#2563EB" />
+                    </View>
+                    <View style={styles.exerciseContent}>
+                      <Text style={styles.exerciseTitle}>Marche de 5 minutes</Text>
+                      <Text style={styles.exerciseText}>
+                        Sors prendre l'air pour apaiser ton esprit
+                      </Text>
+                    </View>
                   </View>
-                </View>
-                <View style={styles.exerciseItem}>
-                  <View style={styles.exerciseIcon}>
-                    <Ionicons name="walk" size={24} color="#2563EB" />
-                  </View>
-                  <View style={styles.exerciseContent}>
-                    <Text style={styles.exerciseTitle}>Marche de 5 minutes</Text>
-                    <Text style={styles.exerciseText}>
-                      Sors prendre l'air pour apaiser ton esprit
-                    </Text>
-                  </View>
-                </View>
-                <View style={styles.exerciseItem}>
-                  <View style={styles.exerciseIcon}>
-                    <Ionicons name="call" size={24} color="#2563EB" />
-                  </View>
-                  <View style={styles.exerciseContent}>
-                    <Text style={styles.exerciseTitle}>Contacter un proche</Text>
-                    <Text style={styles.exerciseText}>
-                      Parler peut vraiment aider à se sentir mieux
-                    </Text>
+                  <View style={styles.exerciseItem}>
+                    <View style={styles.exerciseIcon}>
+                      <Ionicons name="call" size={24} color="#2563EB" />
+                    </View>
+                    <View style={styles.exerciseContent}>
+                      <Text style={styles.exerciseTitle}>Contacter un proche</Text>
+                      <Text style={styles.exerciseText}>
+                        Parler peut vraiment aider à se sentir mieux
+                      </Text>
+                    </View>
                   </View>
                 </View>
               </View>
-            </>
+            </View>
           ) : (
             <>
               {/* Toggle Synthèses */}
@@ -385,7 +414,7 @@ export default function PatientDashboardScreen() {
         </ScrollView>
 
         {/* Bottom Tab Menu */}
-        <View style={styles.bottomTab}>
+        <View style={[styles.bottomTab, isDesktop && styles.bottomTabDesktop]}>
           <Pressable
             style={[styles.tabButton, activeTab === 'bubble' && styles.tabButtonActive]}
             onPress={() => setActiveTab('bubble')}
@@ -429,6 +458,9 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#FFFFFF',
   },
+  containerDesktop: {
+    alignItems: 'center',
+  },
   safeArea: {
     paddingTop: Platform.OS === 'android' ? 25 : 0,
   },
@@ -445,6 +477,11 @@ const styles = StyleSheet.create({
     padding: 20,
     paddingBottom: 100, // Pour le bottom tab
   },
+  scrollContentDesktop: {
+    maxWidth: 960,
+    width: '100%',
+    alignSelf: 'center',
+  },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -454,6 +491,10 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
     borderBottomWidth: 1,
     borderBottomColor: '#F1F5F9',
+  },
+  headerDesktop: {
+    maxWidth: 960,
+    width: '100%',
   },
   headerLeft: {
     flex: 1,
@@ -472,6 +513,31 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#64748B',
     fontWeight: '500',
+  },
+  menuButton: {
+    padding: 4,
+  },
+  menuCard: {
+    backgroundColor: '#FFFFFF',
+    marginHorizontal: 20,
+    marginTop: 8,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    padding: 16,
+  },
+  menuItemTextDanger: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#EF4444',
   },
   
   // Card IA Bulle
@@ -511,6 +577,26 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: 20,
     lineHeight: 20,
+  },
+  // Layout desktop pour l'onglet Bulle
+  bubbleLayout: {
+    flexDirection: 'column',
+    gap: 24,
+  },
+  bubbleLayoutDesktop: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 24,
+  },
+  bubbleLeft: {
+  },
+  bubbleRight: {
+  },
+  bubbleLeftDesktop: {
+    flex: 3,
+  },
+  bubbleRightDesktop: {
+    flex: 2,
   },
   bubbleButton: {
     backgroundColor: '#1E293B',
@@ -744,6 +830,13 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 8,
     elevation: 10,
+  },
+  bottomTabDesktop: {
+    maxWidth: 960,
+    width: '100%',
+    alignSelf: 'center',
+    left: 'auto',
+    right: 'auto',
   },
   tabButton: {
     flex: 1,

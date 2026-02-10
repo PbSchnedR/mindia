@@ -1,6 +1,6 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, View, TextInput, Modal, Alert, Text, Pressable, StatusBar, Platform } from 'react-native';
+import { ScrollView, StyleSheet, View, TextInput, Modal, Alert, Text, Pressable, StatusBar, Platform, useWindowDimensions } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -23,6 +23,7 @@ export default function TherapistPatientDetailScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const { session } = useSession();
+  const { width } = useWindowDimensions();
 
   const [patient, setPatient] = useState<Patient | null>(null);
   const [patientEmail, setPatientEmail] = useState<string>('');
@@ -46,6 +47,8 @@ export default function TherapistPatientDetailScreen() {
   // Navigation state
   const [activeTab, setActiveTab] = useState<'qr' | 'reports' | 'discussion'>('qr');
   const [reportsView, setReportsView] = useState<'ai' | 'therapist'>('therapist');
+
+  const isDesktop = Platform.OS === 'web' && width >= 1024;
 
   useEffect(() => {
     const raw = params.patientId;
@@ -112,7 +115,13 @@ export default function TherapistPatientDetailScreen() {
   }, [params.patientId, session]);
 
   const handleBack = () => {
-    router.back();
+    if (router.canGoBack()) {
+      router.back();
+      return;
+    }
+
+    // Cas "lien direct" / refresh web: pas d'historique React Navigation
+    router.replace('/therapist/dashboard');
   };
 
   const qrCodeValue = useMemo(() => {
@@ -259,10 +268,10 @@ export default function TherapistPatientDetailScreen() {
   return (
     <>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-      <View style={styles.container}>
+      <View style={[styles.container, isDesktop && styles.containerDesktop]}>
         <View style={styles.safeArea} />
         {/* Header */}
-        <View style={styles.header}>
+        <View style={[styles.header, isDesktop && styles.headerDesktop]}>
           <Pressable onPress={handleBack} hitSlop={10}>
             <Ionicons name="arrow-back" size={24} color="#1E293B" />
           </Pressable>
@@ -275,7 +284,12 @@ export default function TherapistPatientDetailScreen() {
         </View>
 
         {/* Content selon le tab actif */}
-        <ScrollView contentContainerStyle={styles.scrollContent}>
+        <ScrollView
+          contentContainerStyle={[
+            styles.scrollContent,
+            isDesktop && styles.scrollContentDesktop,
+          ]}
+        >
           {activeTab === 'qr' && (
             <View style={styles.qrSection}>
               <Text style={styles.sectionTitle}>QR Code d'accès</Text>
@@ -415,95 +429,99 @@ export default function TherapistPatientDetailScreen() {
           )}
 
           {activeTab === 'discussion' && (
-            <View style={styles.discussionSection}>
-              <View style={styles.moodCard}>
-                <Text style={styles.moodTitle}>État actuel du patient</Text>
-                <View style={styles.moodIndicator}>
-                  {actualMood === '1' && (
-                    <>
-                      <Text style={styles.moodEmoji}>😊</Text>
-                      <Text style={styles.moodText}>Plutôt bien</Text>
-                    </>
-                  )}
-                  {actualMood === '2' && (
-                    <>
-                      <Text style={styles.moodEmoji}>😟</Text>
-                      <Text style={styles.moodText}>En difficulté</Text>
-                    </>
-                  )}
-                  {actualMood === '3' && (
-                    <>
-                      <Text style={styles.moodEmoji}>😰</Text>
-                      <Text style={[styles.moodText, styles.moodTextDanger]}>Crise / Urgence</Text>
-                    </>
-                  )}
-                  {!actualMood && (
-                    <Text style={styles.moodTextEmpty}>Non renseigné</Text>
-                  )}
+            <View style={[styles.discussionLayout, isDesktop && styles.discussionLayoutDesktop]}>
+              <View style={[styles.discussionLeft, isDesktop && styles.discussionLeftDesktop]}>
+                <View style={styles.moodCard}>
+                  <Text style={styles.moodTitle}>État actuel du patient</Text>
+                  <View style={styles.moodIndicator}>
+                    {actualMood === '1' && (
+                      <>
+                        <Text style={styles.moodEmoji}>😊</Text>
+                        <Text style={styles.moodText}>Plutôt bien</Text>
+                      </>
+                    )}
+                    {actualMood === '2' && (
+                      <>
+                        <Text style={styles.moodEmoji}>😟</Text>
+                        <Text style={styles.moodText}>En difficulté</Text>
+                      </>
+                    )}
+                    {actualMood === '3' && (
+                      <>
+                        <Text style={styles.moodEmoji}>😰</Text>
+                        <Text style={[styles.moodText, styles.moodTextDanger]}>Crise / Urgence</Text>
+                      </>
+                    )}
+                    {!actualMood && (
+                      <Text style={styles.moodTextEmpty}>Non renseigné</Text>
+                    )}
+                  </View>
                 </View>
+
+                {lastPatientMessage && (
+                  <View style={styles.lastMessageCard}>
+                    <View style={styles.lastMessageHeader}>
+                      <Ionicons name="chatbubble" size={20} color="#2563EB" />
+                      <Text style={styles.lastMessageTitle}>Dernier message du patient</Text>
+                    </View>
+                    <Text style={styles.lastMessageText}>{lastPatientMessage.text}</Text>
+                    <Text style={styles.lastMessageDate}>
+                      {formatDateTime(lastPatientMessage.date)}
+                    </Text>
+                  </View>
+                )}
+
+                <Button 
+                  title="+ Envoyer un message" 
+                  onPress={() => setShowMessageModal(true)}
+                  style={{ marginTop: 16 }}
+                />
               </View>
 
-              {lastPatientMessage && (
-                <View style={styles.lastMessageCard}>
-                  <View style={styles.lastMessageHeader}>
-                    <Ionicons name="chatbubble" size={20} color="#2563EB" />
-                    <Text style={styles.lastMessageTitle}>Dernier message du patient</Text>
-                  </View>
-                  <Text style={styles.lastMessageText}>{lastPatientMessage.text}</Text>
-                  <Text style={styles.lastMessageDate}>
-                    {formatDateTime(lastPatientMessage.date)}
-                  </Text>
-                </View>
-              )}
-
-              <Button 
-                title="+ Envoyer un message" 
-                onPress={() => setShowMessageModal(true)}
-                style={{ marginTop: 16 }}
-              />
-
-              <View style={styles.messagesContent}>
-                <Text style={styles.messagesTitle}>Historique des échanges</Text>
-                {messages.length === 0 ? (
-                  <View style={styles.emptyState}>
-                    <Ionicons name="chatbubbles-outline" size={48} color="#CBD5E1" />
-                    <Text style={styles.emptyText}>Aucun message</Text>
-                  </View>
-                ) : (
-                  messages.map((msg, idx) => (
-                    <View 
-                      key={idx} 
-                      style={[
-                        styles.messageCard,
-                        msg.from === 'therapist' && styles.messageCardTherapist
-                      ]}
-                    >
-                      <View style={styles.messageHeader}>
-                        <View style={styles.messageBadge}>
-                          <Ionicons 
-                            name={msg.from === 'patient' ? 'person' : 'medkit'} 
-                            size={12} 
-                            color={msg.from === 'patient' ? '#2563EB' : '#8B5CF6'} 
-                          />
-                          <Text style={styles.messageBadgeText}>
-                            {msg.from === 'patient' ? 'Patient' : msg.from === 'therapist' ? 'Thérapeute' : 'IA'}
+              <View style={[styles.discussionRight, isDesktop && styles.discussionRightDesktop]}>
+                <View style={styles.messagesContent}>
+                  <Text style={styles.messagesTitle}>Historique des échanges</Text>
+                  {messages.length === 0 ? (
+                    <View style={styles.emptyState}>
+                      <Ionicons name="chatbubbles-outline" size={48} color="#CBD5E1" />
+                      <Text style={styles.emptyText}>Aucun message</Text>
+                    </View>
+                  ) : (
+                    messages.map((msg, idx) => (
+                      <View 
+                        key={idx} 
+                        style={[
+                          styles.messageCard,
+                          msg.from === 'therapist' && styles.messageCardTherapist
+                        ]}
+                      >
+                        <View style={styles.messageHeader}>
+                          <View style={styles.messageBadge}>
+                            <Ionicons 
+                              name={msg.from === 'patient' ? 'person' : 'medkit'} 
+                              size={12} 
+                              color={msg.from === 'patient' ? '#2563EB' : '#8B5CF6'} 
+                            />
+                            <Text style={styles.messageBadgeText}>
+                              {msg.from === 'patient' ? 'Patient' : msg.from === 'therapist' ? 'Thérapeute' : 'IA'}
+                            </Text>
+                          </View>
+                          <Text style={styles.messageDate}>
+                            {formatDateTime(msg.createdAt || msg.date)}
                           </Text>
                         </View>
-                        <Text style={styles.messageDate}>
-                          {formatDateTime(msg.createdAt || msg.date)}
-                        </Text>
+                        <Text style={styles.messageText}>{msg.text}</Text>
                       </View>
-                      <Text style={styles.messageText}>{msg.text}</Text>
-                    </View>
-                  ))
-                )}
+                    ))
+                  )}
+                </View>
               </View>
             </View>
           )}
         </ScrollView>
 
         {/* Bottom Tab Menu */}
-        <View style={styles.bottomTab}>
+        <View style={[styles.bottomTab, isDesktop && styles.bottomTabDesktop]}>
           <Pressable
             style={[styles.tabButton, activeTab === 'qr' && styles.tabButtonActive]}
             onPress={() => setActiveTab('qr')}
@@ -652,8 +670,15 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#FFFFFF',
   },
+  containerDesktop: {
+    alignItems: 'center',
+  },
   safeArea: {
     paddingTop: Platform.OS === 'android' ? 25 : 0,
+  },
+  headerDesktop: {
+    maxWidth: 960,
+    width: '100%',
   },
   center: {
     justifyContent: 'center',
@@ -690,6 +715,11 @@ const styles = StyleSheet.create({
   scrollContent: {
     padding: 20,
     paddingBottom: 100,
+  },
+  scrollContentDesktop: {
+    maxWidth: 960,
+    width: '100%',
+    alignSelf: 'center',
   },
   
   // QR Section
@@ -820,8 +850,24 @@ const styles = StyleSheet.create({
   },
   
   // Discussion Section
-  discussionSection: {
+  discussionLayout: {
+    flexDirection: 'column',
     gap: 16,
+  },
+  discussionLayoutDesktop: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 24,
+  },
+  discussionLeft: {
+  },
+  discussionRight: {
+  },
+  discussionLeftDesktop: {
+    flex: 1,
+  },
+  discussionRightDesktop: {
+    flex: 1,
   },
   moodCard: {
     backgroundColor: '#F8FAFC',
@@ -961,6 +1007,13 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 8,
     elevation: 10,
+  },
+  bottomTabDesktop: {
+    maxWidth: 960,
+    width: '100%',
+    alignSelf: 'center',
+    left: 'auto',
+    right: 'auto',
   },
   tabButton: {
     flex: 1,

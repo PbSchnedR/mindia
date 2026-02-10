@@ -1,6 +1,6 @@
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, View, Text, Modal, TextInput, Alert, StatusBar, Platform } from 'react-native';
+import { FlatList, Pressable, StyleSheet, View, Text, Modal, TextInput, Alert, StatusBar, Platform, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import { Button } from '@/components/ui/button';
@@ -19,11 +19,17 @@ type PatientRow = Patient & {
 export default function TherapistDashboardScreen() {
   const router = useRouter();
   const { session, signOut, loading: sessionLoading } = useSession();
+  const { width } = useWindowDimensions();
   const [therapistName, setTherapistName] = useState<string>('');
   const [patients, setPatients] = useState<PatientRow[]>([]);
   const [menuOpen, setMenuOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  const isWeb = Platform.OS === 'web';
+  const numColumns = isWeb ? (width >= 1440 ? 3 : width >= 1024 ? 2 : 1) : 1;
+  const isDesktop = isWeb && numColumns >= 2;
+  const listKey = `patients-${numColumns}cols`;
   
   // État pour le modal de création de patient
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -173,7 +179,7 @@ export default function TherapistDashboardScreen() {
         onPress={() => {
           router.push(`/therapist/patient/${item.id}`);
         }}
-        style={styles.patientCard}
+        style={[styles.patientCard, isDesktop && styles.patientCardDesktop]}
       >
         <View style={styles.patientHeader}>
           <View style={styles.patientInfo}>
@@ -226,23 +232,29 @@ export default function TherapistDashboardScreen() {
   return (
     <>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-      <View style={styles.container}>
+      <View style={[styles.container, isDesktop && styles.containerDesktop]}>
         <View style={styles.safeArea} />
         {/* Header */}
-        <View style={styles.header}>
+        <View style={[styles.header, isDesktop && styles.headerDesktop]}>
           <View style={styles.headerContent}>
             <Text style={styles.headerTitle}>Mes Patients</Text>
             <Text style={styles.headerSubtitle}>
               Bonjour {therapistName || 'Docteur'}
             </Text>
           </View>
-          <Pressable onPress={() => setMenuOpen(!menuOpen)} hitSlop={10} style={styles.menuButton}>
-            <Ionicons name={menuOpen ? "close" : "menu"} size={28} color="#1E293B" />
-          </Pressable>
+          {isDesktop ? (
+            <Pressable onPress={handleSignOut} hitSlop={10}>
+              <Text style={styles.headerLogoutDesktop}>Déconnexion</Text>
+            </Pressable>
+          ) : (
+            <Pressable onPress={() => setMenuOpen(!menuOpen)} hitSlop={10} style={styles.menuButton}>
+              <Ionicons name={menuOpen ? "close" : "menu"} size={28} color="#1E293B" />
+            </Pressable>
+          )}
         </View>
 
-        {menuOpen && (
-          <View style={styles.menuCard}>
+        {!isDesktop && menuOpen && (
+          <View style={[styles.menuCard, isDesktop && styles.menuCardDesktop]}>
             <Pressable style={styles.menuItem} onPress={handleSignOut}>
               <Ionicons name="log-out-outline" size={20} color="#EF4444" />
               <Text style={styles.menuItemTextDanger}>Déconnexion</Text>
@@ -251,9 +263,9 @@ export default function TherapistDashboardScreen() {
         )}
 
         {/* Bouton ajouter patient */}
-        <View style={styles.actionButtonContainer}>
+        <View style={[styles.actionButtonContainer, isDesktop && styles.actionButtonContainerDesktop]}>
           <Pressable 
-            style={styles.addButton}
+            style={[styles.addButton, isDesktop && styles.addButtonDesktop]}
             onPress={() => setShowCreateModal(true)}
           >
             <Ionicons name="add-circle" size={24} color="#2563EB" />
@@ -263,10 +275,13 @@ export default function TherapistDashboardScreen() {
 
         {/* Liste des patients */}
         <FlatList
+          key={listKey}
           data={patients}
           keyExtractor={(item) => item.id}
-          contentContainerStyle={styles.listContent}
-          ItemSeparatorComponent={() => <View style={{ height: 12 }} />}
+          contentContainerStyle={[styles.listContent, isDesktop && styles.listContentDesktop]}
+          numColumns={numColumns}
+          columnWrapperStyle={isDesktop ? styles.listColumnWrapperDesktop : undefined}
+          ItemSeparatorComponent={isDesktop ? undefined : () => <View style={{ height: 12 }} />}
           renderItem={renderPatient}
           ListEmptyComponent={() => (
             <View style={styles.emptyState}>
@@ -354,6 +369,10 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#FFFFFF',
   },
+  containerDesktop: {
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+  },
   safeArea: {
     paddingTop: Platform.OS === 'android' ? 25 : 0,
   },
@@ -376,6 +395,11 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#F1F5F9',
   },
+  headerDesktop: {
+    maxWidth: 960,
+    width: '100%',
+    alignItems: 'center',
+  },
   headerContent: {
     flex: 1,
   },
@@ -388,6 +412,11 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#64748B',
     marginTop: 4,
+  },
+  headerLogoutDesktop: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#64748B',
   },
   menuButton: {
     padding: 4,
@@ -402,6 +431,11 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 3,
+  },
+  menuCardDesktop: {
+    maxWidth: 960,
+    width: '100%',
+    alignSelf: 'center',
   },
   menuItem: {
     flexDirection: 'row',
@@ -419,6 +453,11 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     paddingBottom: 12,
   },
+  actionButtonContainerDesktop: {
+    maxWidth: 960,
+    width: '100%',
+    alignItems: 'flex-end',
+  },
   addButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -431,6 +470,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#DBEAFE',
   },
+  addButtonDesktop: {
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    alignSelf: 'flex-end',
+  },
   addButtonText: {
     fontSize: 15,
     fontWeight: '600',
@@ -439,6 +483,18 @@ const styles = StyleSheet.create({
   listContent: {
     paddingHorizontal: 20,
     paddingBottom: 20,
+  },
+  listContentDesktop: {
+    maxWidth: 960,
+    width: '100%',
+    alignSelf: 'center',
+    paddingBottom: 28,
+    paddingHorizontal: 0,
+    paddingTop: 4,
+  },
+  listColumnWrapperDesktop: {
+    gap: 12,
+    paddingHorizontal: 20,
   },
   patientCard: {
     backgroundColor: '#F8FAFC',
@@ -450,6 +506,10 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 4,
     elevation: 2,
+  },
+  patientCardDesktop: {
+    flex: 1,
+    marginBottom: 12,
   },
   patientHeader: {
     flexDirection: 'row',
