@@ -243,9 +243,18 @@ export default function TherapistDashboardScreen() {
             </Text>
           </View>
           {isDesktop ? (
-            <Pressable onPress={handleSignOut} hitSlop={10}>
-              <Text style={styles.headerLogoutDesktop}>Déconnexion</Text>
-            </Pressable>
+            <View style={styles.headerActionsDesktop}>
+              <Pressable
+                onPress={() => router.push('/therapist/settings')}
+                hitSlop={10}
+                style={styles.headerIconButton}
+              >
+                <Ionicons name="settings-outline" size={22} color="#1E293B" />
+              </Pressable>
+              <Pressable onPress={handleSignOut} hitSlop={10}>
+                <Text style={styles.headerLogoutDesktop}>Déconnexion</Text>
+              </Pressable>
+            </View>
           ) : (
             <Pressable onPress={() => setMenuOpen(!menuOpen)} hitSlop={10} style={styles.menuButton}>
               <Ionicons name={menuOpen ? "close" : "menu"} size={28} color="#1E293B" />
@@ -255,6 +264,16 @@ export default function TherapistDashboardScreen() {
 
         {!isDesktop && menuOpen && (
           <View style={[styles.menuCard, isDesktop && styles.menuCardDesktop]}>
+            <Pressable
+              style={styles.menuItem}
+              onPress={() => {
+                setMenuOpen(false);
+                router.push('/therapist/settings');
+              }}
+            >
+              <Ionicons name="settings-outline" size={20} color="#1E293B" />
+              <Text style={styles.menuItemText}>Paramètres</Text>
+            </Pressable>
             <Pressable style={styles.menuItem} onPress={handleSignOut}>
               <Ionicons name="log-out-outline" size={20} color="#EF4444" />
               <Text style={styles.menuItemTextDanger}>Déconnexion</Text>
@@ -403,6 +422,14 @@ const styles = StyleSheet.create({
   headerContent: {
     flex: 1,
   },
+  headerActionsDesktop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+  },
+  headerIconButton: {
+    padding: 4,
+  },
   headerTitle: {
     fontSize: 28,
     fontWeight: '700',
@@ -442,6 +469,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 12,
     padding: 16,
+  },
+  menuItemText: {
+    fontSize: 15,
+    color: '#1E293B',
   },
   menuItemTextDanger: {
     fontSize: 15,

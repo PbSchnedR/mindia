@@ -327,6 +327,15 @@ export default function TherapistPatientDetailScreen() {
             </Text>
             <Text style={styles.patientEmail}>{patientEmail}</Text>
           </View>
+          {isDesktop && (
+            <Pressable
+              onPress={() => router.push('/therapist/settings')}
+              hitSlop={10}
+              style={styles.headerIconButton}
+            >
+              <Ionicons name="settings-outline" size={22} color="#1E293B" />
+            </Pressable>
+          )}
         </View>
 
         {/* Onglets principaux (desktop uniquement) */}
@@ -1283,6 +1292,9 @@ const styles = StyleSheet.create({
   },
   headerContent: {
     flex: 1,
+  },
+  headerIconButton: {
+    padding: 4,
   },
   patientName: {
     fontSize: 20,

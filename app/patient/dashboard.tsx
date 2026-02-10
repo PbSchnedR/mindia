@@ -8,7 +8,15 @@ import { PrimaryTabs } from '@/components/primary-tabs';
 import { useSession } from '@/lib/session-context';
 import { api } from '@/lib/api';
 import { listChatSessionsForPatient, setSeverity, setSummaryAndKeywords, simpleAutoSummary, startChatSession } from '@/lib/chat';
+import { getTherapistById } from '@/lib/people';
 import type { Severity } from '@/lib/types';
+
+// Chargement conditionnel de react-calendly uniquement sur le web
+let InlineWidget: any | null = null;
+if (Platform.OS === 'web') {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  InlineWidget = require('react-calendly').InlineWidget;
+}
 
 interface Report {
   _id: string;
@@ -38,9 +46,11 @@ export default function PatientDashboardScreen() {
   const [mood, setMood] = useState<Severity | undefined>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [therapistName, setTherapistName] = useState<string>('');
+  const [therapistBookingUrl, setTherapistBookingUrl] = useState<string | null>(null);
   
   // Navigation state
-  const [activeTab, setActiveTab] = useState<'bubble' | 'reports'>('bubble');
+  const [activeTab, setActiveTab] = useState<'bubble' | 'reports' | 'booking'>('bubble');
   const [reportsView, setReportsView] = useState<'therapist' | 'last'>('therapist');
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -71,6 +81,33 @@ export default function PatientDashboardScreen() {
       // Charger les infos du patient
       const { user } = await api.users.getById(patientId);
       setPatientInfo(user);
+
+      // Charger le nom complet du thérapeute pour l'onglet Rendez-vous
+      if (session.therapistId) {
+        try {
+          const therapist = await getTherapistById(session.therapistId);
+          if (therapist) {
+            setTherapistName(`${therapist.firstName} ${therapist.lastName}`);
+          }
+        } catch (e) {
+          console.warn('Erreur chargement thérapeute pour Calendly:', e);
+        }
+      }
+
+      // Charger les infos du thérapeute (nom complet + lien de réservation)
+      if (session.therapistId) {
+        try {
+          const therapist = await getTherapistById(session.therapistId);
+          if (therapist) {
+            setTherapistName(`${therapist.firstName} ${therapist.lastName}`.trim());
+            if (therapist.bookingUrl) {
+              setTherapistBookingUrl(therapist.bookingUrl);
+            }
+          }
+        } catch (e) {
+          console.warn('Erreur chargement thérapeute pour patient dashboard:', e);
+        }
+      }
 
       // Déterminer le mood initial à partir de actual_mood si présent
       let moodFromUser: Severity | undefined;
@@ -221,9 +258,12 @@ export default function PatientDashboardScreen() {
             tabs={[
               { key: 'bubble', label: 'Bulle' },
               { key: 'reports', label: 'Synthèses' },
+              { key: 'booking', label: 'Rendez-vous' },
             ]}
             activeKey={activeTab}
-            onChange={(key) => setActiveTab(key as 'bubble' | 'reports')}
+            onChange={(key) =>
+              setActiveTab(key as 'bubble' | 'reports' | 'booking')
+            }
             style={styles.desktopTabs}
           />
         )}
@@ -234,7 +274,7 @@ export default function PatientDashboardScreen() {
             contentContainerStyle={[styles.scrollContent, styles.scrollContentDesktop]}
             showsVerticalScrollIndicator={false}
           >
-            {activeTab === 'bubble' ? (
+            {activeTab === 'bubble' && (
               <View
                 style={[styles.bubbleLayout, styles.bubbleLayoutDesktop]}
               >
@@ -335,17 +375,17 @@ export default function PatientDashboardScreen() {
                     styles.bubbleRightDesktop,
                   ]}
                 >
-                  {/* Carte rendez-vous (si Calendly dispo) */}
-                  {patientInfo?.bookingUrl && (
+                  {/* Carte rendez-vous (si lien dispo) */}
+                  {therapistBookingUrl && (
                     <View style={styles.bookingCard}>
                       <Text style={styles.bookingTitle}>Prendre rendez-vous</Text>
                       <Text style={styles.bookingText}>
-                        Planifie une prochaine séance avec ton thérapeute quand tu en as besoin.
+                        Planifie une prochaine séance avec {therapistName || 'ton thérapeute'} quand tu en as besoin.
                       </Text>
                       <Pressable
                         style={styles.bookingButton}
                         onPress={() =>
-                          Linking.openURL(patientInfo.bookingUrl!)
+                          Linking.openURL(therapistBookingUrl)
                         }
                       >
                         <Ionicons
@@ -405,7 +445,9 @@ export default function PatientDashboardScreen() {
                   </View>
                 </View>
               </View>
-            ) : (
+            )}
+
+            {activeTab === 'reports' && (
               <View style={styles.reportsDesktopLayout}>
                 <View style={styles.reportsDesktopColumn}>
                   <Text style={styles.reportsTitle}>
@@ -484,10 +526,84 @@ export default function PatientDashboardScreen() {
                 </View>
               </View>
             )}
+
+            {activeTab === 'booking' && (
+              <View style={styles.bookingSection}>
+                {therapistBookingUrl ? (
+                  <>
+                    <View style={styles.bookingHero}>
+                      <View style={styles.bookingHeroIcon}>
+                        <Ionicons
+                          name="calendar"
+                          size={28}
+                          color="#2563EB"
+                        />
+                      </View>
+                      <View style={styles.bookingHeroText}>
+                        <Text style={styles.bookingHeroTitle}>
+                          Prendre rendez-vous avec{' '}
+                          {therapistName || 'ton thérapeute'}
+                        </Text>
+                        <Text style={styles.bookingHeroSubtitle}>
+                          Choisis le créneau qui te convient le mieux, en toute
+                          autonomie.
+                        </Text>
+                      </View>
+                    </View>
+
+                    {Platform.OS === 'web' && InlineWidget ? (
+                      <View style={styles.calendlyContainer}>
+                        <InlineWidget url={therapistBookingUrl} styles={{ height: '650px' }} />
+                      </View>
+                    ) : (
+                      <View style={styles.bookingDesktopCard}>
+                        <Text style={styles.bookingDesktopTitle}>
+                          Calendrier en ligne
+                        </Text>
+                        <Text style={styles.bookingDesktopText}>
+                          Tu seras redirigé(e) vers Calendly pour confirmer ton
+                          rendez-vous avec {therapistName || 'ton thérapeute'}.
+                        </Text>
+                        <Pressable
+                          style={styles.bookingCtaButton}
+                          onPress={() =>
+                            Linking.openURL(therapistBookingUrl)
+                          }
+                        >
+                          <Ionicons
+                            name="calendar-outline"
+                            size={20}
+                            color="#FFFFFF"
+                          />
+                          <Text style={styles.bookingCtaButtonText}>
+                            Ouvrir Calendly
+                          </Text>
+                        </Pressable>
+                      </View>
+                    )}
+                  </>
+                ) : (
+                  <View style={styles.emptyState}>
+                    <Ionicons
+                      name="time-outline"
+                      size={48}
+                      color="#CBD5E1"
+                    />
+                    <Text style={styles.emptyText}>
+                      Prise de rendez-vous bientôt disponible
+                    </Text>
+                    <Text style={styles.emptySubtext}>
+                      Ton thérapeute n'a pas encore configuré la réservation en
+                      ligne. N'hésite pas à lui en parler en séance.
+                    </Text>
+                  </View>
+                )}
+              </View>
+            )}
           </ScrollView>
         ) : (
           <ScrollView contentContainerStyle={styles.scrollContent}>
-            {activeTab === 'bubble' ? (
+            {activeTab === 'bubble' && (
               <>
                 {/* Card IA Bulle */}
                 <View style={styles.aiCard}>
@@ -615,7 +731,9 @@ export default function PatientDashboardScreen() {
                   </View>
                 </View>
               </>
-            ) : (
+            )}
+
+            {activeTab === 'reports' && (
               <>
                 {/* Toggle Synthèses */}
                 <View style={styles.reportsToggle}>
@@ -742,6 +860,79 @@ export default function PatientDashboardScreen() {
                 )}
               </>
             )}
+
+            {activeTab === 'booking' && (
+              <View style={styles.bookingSection}>
+                {therapistBookingUrl ? (
+                  <>
+                    <View style={styles.bookingHero}>
+                      <View style={styles.bookingHeroIcon}>
+                        <Ionicons
+                          name="calendar"
+                          size={28}
+                          color="#2563EB"
+                        />
+                      </View>
+                      <View style={styles.bookingHeroText}>
+                        <Text style={styles.bookingHeroTitle}>
+                          Prendre rendez-vous avec{' '}
+                          {therapistName || 'ton thérapeute'}
+                        </Text>
+                        <Text style={styles.bookingHeroSubtitle}>
+                          Réserve facilement un créneau depuis ton téléphone.
+                        </Text>
+                      </View>
+                    </View>
+
+                    {Platform.OS === 'web' && InlineWidget ? (
+                      <View style={styles.calendlyContainer}>
+                        <InlineWidget url={therapistBookingUrl} styles={{ height: '650px' }} />
+                      </View>
+                    ) : (
+                      <View style={styles.bookingMobileCard}>
+                        <Text style={styles.bookingDesktopTitle}>
+                          Calendrier en ligne
+                        </Text>
+                        <Text style={styles.bookingDesktopText}>
+                          Tu seras redirigé(e) vers Calendly pour confirmer ton
+                          rendez-vous avec {therapistName || 'ton thérapeute'}.
+                        </Text>
+                        <Pressable
+                          style={styles.bookingCtaButton}
+                          onPress={() =>
+                            Linking.openURL(therapistBookingUrl)
+                          }
+                        >
+                          <Ionicons
+                            name="calendar-outline"
+                            size={20}
+                            color="#FFFFFF"
+                          />
+                          <Text style={styles.bookingCtaButtonText}>
+                            Ouvrir Calendly
+                          </Text>
+                        </Pressable>
+                      </View>
+                    )}
+                  </>
+                ) : (
+                  <View style={styles.emptyState}>
+                    <Ionicons
+                      name="time-outline"
+                      size={48}
+                      color="#CBD5E1"
+                    />
+                    <Text style={styles.emptyText}>
+                      Prise de rendez-vous bientôt disponible
+                    </Text>
+                    <Text style={styles.emptySubtext}>
+                      Ton thérapeute n'a pas encore configuré la réservation en
+                      ligne. N'hésite pas à lui en parler en séance.
+                    </Text>
+                  </View>
+                )}
+              </View>
+            )}
           </ScrollView>
         )}
 
@@ -773,6 +964,7 @@ export default function PatientDashboardScreen() {
                 Bulle
               </Text>
             </Pressable>
+
             <Pressable
               style={[
                 styles.tabButton,
@@ -794,6 +986,32 @@ export default function PatientDashboardScreen() {
                 ]}
               >
                 Synthèses
+              </Text>
+            </Pressable>
+
+            <Pressable
+              style={[
+                styles.tabButton,
+                activeTab === 'booking' && styles.tabButtonActive,
+              ]}
+              onPress={() => setActiveTab('booking')}
+            >
+              <Ionicons
+                name={
+                  activeTab === 'booking'
+                    ? 'calendar'
+                    : 'calendar-outline'
+                }
+                size={24}
+                color={activeTab === 'booking' ? '#2563EB' : '#64748B'}
+              />
+              <Text
+                style={[
+                  styles.tabText,
+                  activeTab === 'booking' && styles.tabTextActive,
+                ]}
+              >
+                Rendez-vous
               </Text>
             </Pressable>
           </View>
@@ -1128,6 +1346,84 @@ const styles = StyleSheet.create({
   },
   reportsDesktopColumn: {
     flex: 1,
+  },
+
+  // Booking (Rendez-vous)
+  bookingSection: {
+    gap: 24,
+  },
+  calendlyContainer: {
+    borderRadius: 20,
+    overflow: 'hidden',
+    backgroundColor: '#FFFFFF',
+  },
+  bookingHero: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+    padding: 20,
+    borderRadius: 20,
+    backgroundColor: '#EFF6FF',
+  },
+  bookingHeroIcon: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: '#DBEAFE',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  bookingHeroText: {
+    flex: 1,
+  },
+  bookingHeroTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: '#1E293B',
+    marginBottom: 4,
+  },
+  bookingHeroSubtitle: {
+    fontSize: 14,
+    color: '#64748B',
+    lineHeight: 20,
+  },
+  bookingDesktopCard: {
+    backgroundColor: '#0F172A',
+    borderRadius: 24,
+    padding: 24,
+    gap: 16,
+  },
+  bookingMobileCard: {
+    backgroundColor: '#0F172A',
+    borderRadius: 24,
+    padding: 20,
+    gap: 14,
+  },
+  bookingDesktopTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#E5E7EB',
+  },
+  bookingDesktopText: {
+    fontSize: 14,
+    color: '#CBD5F5',
+    lineHeight: 20,
+  },
+  bookingCtaButton: {
+    marginTop: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 999,
+    backgroundColor: '#2563EB',
+  },
+  bookingCtaButtonText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#FFFFFF',
   },
   reportsTitle: {
     fontSize: 16,
