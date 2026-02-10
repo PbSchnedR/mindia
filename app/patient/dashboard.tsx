@@ -66,6 +66,16 @@ export default function PatientDashboardScreen() {
       // Charger les infos du patient
       const { user } = await api.users.getById(patientId);
       setPatientInfo(user);
+
+      // Déterminer le mood initial à partir de actual_mood si présent
+      let moodFromUser: Severity | undefined;
+      if (user.actual_mood) {
+        const parsed = parseInt(String(user.actual_mood), 10);
+        if (parsed === 1 || parsed === 2 || parsed === 3) {
+          moodFromUser = parsed as Severity;
+          setMood(moodFromUser);
+        }
+      }
       
       // Charger les constats
       const { reports: reportsData } = await api.reports.get(patientId);
@@ -83,11 +93,16 @@ export default function PatientDashboardScreen() {
       if (sessions.length > 0) {
         const latest = sessions[0];
         setChatSessionId(latest.id);
-        setMood(latest.severity);
+        // Ne pas écraser le mood venant de actual_mood
+        if (!moodFromUser) {
+          setMood(latest.severity);
+        }
       } else {
         const created = await startChatSession(patientId, session.therapistId);
         setChatSessionId(created.id);
-        setMood(created.severity);
+        if (!moodFromUser) {
+          setMood(created.severity);
+        }
       }
     } catch (err: any) {
       console.error('Erreur chargement dashboard patient:', err);

@@ -41,6 +41,8 @@ export type Patient = {
   firstName: string;
   lastName: string;
   email: string;
+  // Dernier état émotionnel explicite choisi par le patient (1,2,3 stocké en string côté backend)
+  actualMood?: string | null;
   birthYear?: number;
   profession?: string;
   familySituation?: string;

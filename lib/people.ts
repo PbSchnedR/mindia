@@ -44,6 +44,7 @@ function normalizePatient(patient: any): Patient {
     firstName: firstName || '',
     lastName: lastName || '',
     email: patient.email,
+    actualMood: patient.actual_mood ?? null,
     birthYear: patient.birthYear,
     profession: patient.profession,
     familySituation: patient.familySituation,

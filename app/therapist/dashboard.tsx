@@ -145,15 +145,28 @@ export default function TherapistDashboardScreen() {
     }
   };
 
-  const getMoodIcon = (severity?: number) => {
-    if (severity === 1) return { emoji: '😊', color: '#10B981', label: 'Bien' };
-    if (severity === 2) return { emoji: '😟', color: '#F59E0B', label: 'Difficile' };
-    if (severity === 3) return { emoji: '😰', color: '#EF4444', label: 'Urgence' };
+  const getMoodIcon = (actualMood?: string | null, severity?: number) => {
+    let value: number | undefined;
+
+    if (actualMood) {
+      const parsed = parseInt(String(actualMood), 10);
+      if (parsed === 1 || parsed === 2 || parsed === 3) {
+        value = parsed;
+      }
+    }
+
+    if (!value && typeof severity === 'number') {
+      value = severity;
+    }
+
+    if (value === 1) return { emoji: '😊', color: '#10B981', label: 'Bien' };
+    if (value === 2) return { emoji: '😟', color: '#F59E0B', label: 'Difficile' };
+    if (value === 3) return { emoji: '😰', color: '#EF4444', label: 'Urgence' };
     return { emoji: '😐', color: '#94A3B8', label: 'Non renseigné' };
   };
 
   const renderPatient = ({ item }: { item: PatientRow }) => {
-    const mood = getMoodIcon(item.lastSeverity);
+    const mood = getMoodIcon(item.actualMood, item.lastSeverity);
     
     return (
       <Pressable
