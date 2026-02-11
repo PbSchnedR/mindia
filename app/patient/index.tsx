@@ -61,7 +61,6 @@ export default function PatientLoginScreen() {
       </Modal>
     );
   }
-
   return (
     <ThemedView style={styles.container}>
       <View style={styles.safeArea} />
@@ -189,3 +188,4 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
 });
+

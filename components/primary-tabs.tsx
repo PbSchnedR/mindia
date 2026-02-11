@@ -1,5 +1,6 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text, View, ViewStyle } from 'react-native';
+import { Pressable, StyleSheet, Text, View, type ViewStyle } from 'react-native';
+import { colors, spacing, radius } from '@/constants/tokens';
 
 type TabKey = string;
 
@@ -13,48 +14,58 @@ export interface PrimaryTabsProps {
 export function PrimaryTabs({ tabs, activeKey, onChange, style }: PrimaryTabsProps) {
   return (
     <View style={[styles.container, style]}>
-      {tabs.map((tab) => {
-        const active = tab.key === activeKey;
-        return (
-          <Pressable
-            key={tab.key}
-            onPress={() => onChange(tab.key)}
-            style={[styles.tab, active && styles.tabActive]}
-          >
-            <Text style={[styles.tabText, active && styles.tabTextActive]}>
-              {tab.label}
-            </Text>
-          </Pressable>
-        );
-      })}
+      <View style={styles.inner}>
+        {tabs.map((tab) => {
+          const active = tab.key === activeKey;
+          return (
+            <Pressable
+              key={tab.key}
+              onPress={() => onChange(tab.key)}
+              style={[styles.tab, active && styles.tabActive]}
+            >
+              <Text style={[styles.tabText, active && styles.tabTextActive]}>
+                {tab.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
+    paddingHorizontal: spacing['2xl'],
+    paddingTop: spacing.md,
+    paddingBottom: spacing.sm,
+  },
+  inner: {
     flexDirection: 'row',
-    gap: 8,
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 4,
+    gap: spacing.sm,
+    backgroundColor: colors.bgTertiary,
+    borderRadius: radius.full,
+    padding: 4,
   },
   tab: {
     paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 999,
-    backgroundColor: '#F1F5F9',
+    paddingHorizontal: spacing.xl,
+    borderRadius: radius.full,
   },
   tabActive: {
-    backgroundColor: '#2563EB',
+    backgroundColor: colors.bg,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    elevation: 2,
   },
   tabText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#64748B',
+    color: colors.textTertiary,
   },
   tabTextActive: {
-    color: '#FFFFFF',
+    color: colors.text,
   },
 });
-

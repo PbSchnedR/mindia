@@ -1,19 +1,17 @@
 import React from 'react';
 import { StyleSheet, View, type ViewProps } from 'react-native';
-
-import { useThemeColor } from '@/hooks/use-theme-color';
+import { colors, radius, spacing, shadows } from '@/constants/tokens';
 
 export function Card({ style, ...rest }: ViewProps) {
-  const bg = useThemeColor({}, 'background');
-  return <View style={[styles.card, { backgroundColor: bg }, style]} {...rest} />;
+  return <View style={[styles.card, style]} {...rest} />;
 }
 
 const styles = StyleSheet.create({
   card: {
-    borderRadius: 16,
-    padding: 14,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: 'rgba(120,120,120,0.25)',
+    backgroundColor: colors.bgSecondary,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
 });
-

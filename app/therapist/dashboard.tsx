@@ -1,684 +1,345 @@
 import { useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, View, Text, Modal, TextInput, Alert, StatusBar, Platform, useWindowDimensions } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import {
+  FlatList, Pressable, StyleSheet, View, Text, Modal, Alert, Platform, ScrollView,
+} from 'react-native';
+import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 
 import { Button } from '@/components/ui/button';
+import { TextField } from '@/components/ui/text-field';
+import { HeaderIconButton } from '@/components/ui/page-layout';
+import { EmptyState } from '@/components/ui/empty-state';
+import { useIsDesktop } from '@/hooks/use-breakpoint';
 import { listChatSessionsForTherapist } from '@/lib/chat';
 import { useSession } from '@/lib/session-context';
 import { getTherapistById, listPatientsForTherapist } from '@/lib/people';
 import { api } from '@/lib/api';
 import type { ChatSession, Patient } from '@/lib/types';
+import { colors, spacing, radius, shadows, font, layout } from '@/constants/tokens';
 
-type PatientRow = Patient & {
-  lastSeverity?: number;
-  lastSummary?: string;
-  lastDate?: string;
+type PatientRow = Patient & { lastSeverity?: number; lastSummary?: string; lastDate?: string };
+
+const getMoodData = (actualMood?: string | null, severity?: number) => {
+  let value: number | undefined;
+  if (actualMood) { const p = parseInt(String(actualMood), 10); if (p >= 1 && p <= 3) value = p; }
+  if (!value && typeof severity === 'number') value = severity;
+  if (value === 1) return { emoji: '😊', color: colors.success, label: 'Bien', bg: colors.successLight };
+  if (value === 2) return { emoji: '😟', color: colors.warning, label: 'Difficile', bg: colors.warningLight };
+  if (value === 3) return { emoji: '😰', color: colors.error, label: 'Urgence', bg: colors.errorLight };
+  return { emoji: '😐', color: colors.textTertiary, label: 'Non renseigné', bg: colors.bgTertiary };
 };
 
 export default function TherapistDashboardScreen() {
   const router = useRouter();
   const { session, signOut, loading: sessionLoading } = useSession();
-  const { width } = useWindowDimensions();
-  const [therapistName, setTherapistName] = useState<string>('');
+  const isDesktop = useIsDesktop();
+  const hasRedirected = useRef(false);
+
+  const [therapistName, setTherapistName] = useState('');
   const [patients, setPatients] = useState<PatientRow[]>([]);
-  const [menuOpen, setMenuOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const isWeb = Platform.OS === 'web';
-  const numColumns = isWeb ? (width >= 1440 ? 3 : width >= 1024 ? 2 : 1) : 1;
-  const isDesktop = isWeb && numColumns >= 2;
-  const listKey = `patients-${numColumns}cols`;
-  
-  // État pour le modal de création de patient
   const [showCreateModal, setShowCreateModal] = useState(false);
-  const [newPatientUsername, setNewPatientUsername] = useState('');
-  const [newPatientEmail, setNewPatientEmail] = useState('');
+  const [newUsername, setNewUsername] = useState('');
+  const [newEmail, setNewEmail] = useState('');
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
   useEffect(() => {
     if (sessionLoading) return;
-    
     if (!session || session.role !== 'therapist') {
-      const timeout = setTimeout(() => {
-        router.replace('/therapist');
-      }, 0);
-      return () => clearTimeout(timeout);
+      if (!hasRedirected.current) { hasRedirected.current = true; router.replace('/'); }
+      return;
     }
-    
     void (async () => {
-      setLoading(true);
-      setError(null);
+      setLoading(true); setError(null);
       try {
         const therapist = await getTherapistById(session.therapistId);
-        if (therapist) {
-          setTherapistName(`${therapist.firstName} ${therapist.lastName}`);
-        }
+        if (therapist) setTherapistName(`${therapist.firstName} ${therapist.lastName}`);
         await loadPatients();
       } catch (err: any) {
-        console.error('Erreur chargement dashboard:', err);
-        if (err?.status === 401 || err?.message?.toLowerCase().includes('token')) {
-          await handleSignOut();
-        } else {
-          setError('Une erreur est survenue. Vérifiez votre connexion et réessayez.');
-        }
-      } finally {
-        setLoading(false);
-      }
+        if (err?.status === 401) await handleSignOut();
+        else setError('Une erreur est survenue.');
+      } finally { setLoading(false); }
     })();
-  }, [session, sessionLoading, router]);
-
-  const handleSignOut = async () => {
-    setMenuOpen(false);
-    await signOut();
-    router.replace('/');
-  };
+  }, [session, sessionLoading]);
 
   const loadPatients = async () => {
     if (!session || session.role !== 'therapist') return;
-    
-    try {
-      const p = await listPatientsForTherapist(session.therapistId);
-      const sessions = await listChatSessionsForTherapist(session.therapistId);
-
-      const byPatient: Record<string, ChatSession | undefined> = {};
-      for (const s of sessions) {
-        const existing = byPatient[s.patientId];
-        if (!existing || existing.createdAt < s.createdAt) {
-          byPatient[s.patientId] = s;
-        }
-      }
-
-      const rows: PatientRow[] = p.map((pt) => {
-        const last = byPatient[pt.id];
-        return {
-          ...pt,
-          lastSeverity: last?.severity,
-          lastSummary: last?.summary,
-          lastDate: last?.createdAt,
-        };
-      });
-      setPatients(rows);
-      setError(null);
-    } catch (err: any) {
-      console.error('Erreur chargement patients:', err);
-      setError('Impossible de charger les patients. Réessayez plus tard.');
-    }
-  };
-
-  const handleRetry = async () => {
-    setLoading(true);
+    const p = await listPatientsForTherapist(session.therapistId);
+    const sessions = await listChatSessionsForTherapist(session.therapistId);
+    const byPatient: Record<string, ChatSession | undefined> = {};
+    for (const s of sessions) { const ex = byPatient[s.patientId]; if (!ex || ex.createdAt < s.createdAt) byPatient[s.patientId] = s; }
+    setPatients(p.map((pt) => { const last = byPatient[pt.id]; return { ...pt, lastSeverity: last?.severity, lastSummary: last?.summary, lastDate: last?.createdAt }; }));
     setError(null);
-    try {
-      await loadPatients();
-    } catch (err) {
-      setError('Une erreur est survenue. Réessayez plus tard.');
-    } finally {
-      setLoading(false);
-    }
   };
+
+  const handleSignOut = async () => { await signOut(); router.replace('/'); };
 
   const handleCreatePatient = async () => {
     if (!session || session.role !== 'therapist') return;
-    
     setCreateError(null);
-    
-    if (!newPatientUsername.trim() || !newPatientEmail.trim()) {
-      setCreateError('Nom d\'utilisateur et email requis');
-      return;
-    }
-
+    if (!newUsername.trim() || !newEmail.trim()) { setCreateError('Nom et email requis'); return; }
     setCreating(true);
     try {
-      await api.users.createPatient(session.therapistId, {
-        username: newPatientUsername.trim(),
-        email: newPatientEmail.trim().toLowerCase(),
-      });
-      
-      setNewPatientUsername('');
-      setNewPatientEmail('');
-      setShowCreateModal(false);
-      
-      await loadPatients();
-      
+      await api.users.createPatient(session.therapistId, { username: newUsername.trim(), email: newEmail.trim().toLowerCase() });
+      setNewUsername(''); setNewEmail(''); setShowCreateModal(false); await loadPatients();
       Alert.alert('Succès', 'Patient créé avec succès');
-    } catch (error: any) {
-      setCreateError(error?.message || 'Erreur lors de la création');
-    } finally {
-      setCreating(false);
-    }
+    } catch (err: any) { setCreateError(err?.message || 'Erreur lors de la création'); }
+    finally { setCreating(false); }
   };
 
-  const getMoodIcon = (actualMood?: string | null, severity?: number) => {
-    let value: number | undefined;
+  if (sessionLoading || loading) {
+    return <View style={[s.center, { flex: 1, backgroundColor: isDesktop ? colors.bgDesktop : colors.bg }]}><Text style={font.bodySmall}>Chargement…</Text></View>;
+  }
+  if (error) {
+    return (
+      <View style={[s.center, { flex: 1, backgroundColor: colors.bg }]}>
+        <View style={s.errorCard}>
+          <Ionicons name="alert-circle" size={48} color={colors.error} />
+          <Text style={[font.subtitle, { color: colors.error }]}>Oups !</Text>
+          <Text style={[font.bodySmall, { textAlign: 'center' }]}>{error}</Text>
+          <Button title="Réessayer" onPress={() => { setLoading(true); loadPatients().finally(() => setLoading(false)); }} />
+          <Button title="Déconnexion" variant="ghost" onPress={handleSignOut} />
+        </View>
+      </View>
+    );
+  }
 
-    if (actualMood) {
-      const parsed = parseInt(String(actualMood), 10);
-      if (parsed === 1 || parsed === 2 || parsed === 3) {
-        value = parsed;
-      }
-    }
-
-    if (!value && typeof severity === 'number') {
-      value = severity;
-    }
-
-    if (value === 1) return { emoji: '😊', color: '#10B981', label: 'Bien' };
-    if (value === 2) return { emoji: '😟', color: '#F59E0B', label: 'Difficile' };
-    if (value === 3) return { emoji: '😰', color: '#EF4444', label: 'Urgence' };
-    return { emoji: '😐', color: '#94A3B8', label: 'Non renseigné' };
-  };
+  // ── Stats ──────────────────────────────────────────────
+  const urgentCount = patients.filter((p) => p.actualMood === '3' || p.lastSeverity === 3).length;
+  const difficultCount = patients.filter((p) => p.actualMood === '2' || p.lastSeverity === 2).length;
 
   const renderPatient = ({ item }: { item: PatientRow }) => {
-    const mood = getMoodIcon(item.actualMood, item.lastSeverity);
-    
+    const mood = getMoodData(item.actualMood, item.lastSeverity);
     return (
-      <Pressable
-        onPress={() => {
-          router.push(`/therapist/patient/${item.id}`);
-        }}
-        style={[styles.patientCard, isDesktop && styles.patientCardDesktop]}
-      >
-        <View style={styles.patientHeader}>
-          <View style={styles.patientInfo}>
-            <Text style={styles.patientName}>
-              {item.firstName} {item.lastName}
-            </Text>
-            <Text style={styles.patientMeta}>
-              {item.therapyTopic ?? 'Sujet non renseigné'} · {item.sessionsDone ?? 0} séances
-            </Text>
+      <Pressable onPress={() => router.push(`/therapist/patient/${item.id}`)} style={({ pressed }) => [s.patientCard, isDesktop && s.patientCardDesktop, pressed && s.patientCardPressed]}>
+        <View style={s.patientRow}>
+          <View style={[s.patientAvatar, { backgroundColor: mood.bg }]}><Text style={{ fontSize: 22 }}>{mood.emoji}</Text></View>
+          <View style={{ flex: 1, gap: 2 }}>
+            <Text style={s.patientName}>{item.firstName} {item.lastName}</Text>
+            <Text style={font.caption}>{item.therapyTopic ?? 'Sujet non renseigné'} · {item.sessionsDone ?? 0} séances</Text>
           </View>
-          <View style={[styles.moodBadge, { backgroundColor: `${mood.color}20` }]}>
-            <Text style={styles.moodEmoji}>{mood.emoji}</Text>
+          <View style={[s.moodPill, { backgroundColor: mood.bg }]}>
+            <View style={[s.moodDot, { backgroundColor: mood.color }]} />
+            <Text style={[font.caption, { color: mood.color, fontWeight: '600' }]}>{mood.label}</Text>
           </View>
         </View>
-        
-        {item.lastSummary ? (
-          <Text style={styles.lastSummary} numberOfLines={2}>
-            {item.lastSummary}
-          </Text>
-        ) : (
-          <Text style={styles.lastSummaryEmpty}>
-            Aucune remontée de la bulle pour l'instant
-          </Text>
-        )}
+        {item.lastSummary && <Text style={[font.bodySmall, { marginTop: spacing.sm }]} numberOfLines={2}>{item.lastSummary}</Text>}
       </Pressable>
     );
   };
 
-  if (sessionLoading || loading) {
-    return (
-      <View style={[styles.container, styles.centerContent]}>
-        <Text style={styles.loadingText}>Chargement...</Text>
-      </View>
-    );
-  }
-
-  if (error) {
-    return (
-      <View style={[styles.container, styles.centerContent]}>
-        <View style={styles.errorCard}>
-          <Text style={styles.errorTitle}>Oups !</Text>
-          <Text style={styles.errorMessage}>{error}</Text>
-          <Button title="Réessayer" onPress={handleRetry} style={{ marginTop: 16 }} />
-          <Button title="Se déconnecter" variant="secondary" onPress={handleSignOut} style={{ marginTop: 8 }} />
-        </View>
-      </View>
-    );
-  }
-
-  return (
-    <>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-      <View style={[styles.container, isDesktop && styles.containerDesktop]}>
-        <View style={styles.safeArea} />
-        {/* Header */}
-        <View style={[styles.header, isDesktop && styles.headerDesktop]}>
-          <View style={styles.headerContent}>
-            <Text style={styles.headerTitle}>Mes Patients</Text>
-            <Text style={styles.headerSubtitle}>
-              Bonjour {therapistName || 'Docteur'}
-            </Text>
+  // ── Create Modal ───────────────────────────────────────
+  const renderCreateModal = () => (
+    <Modal visible={showCreateModal} animationType="fade" transparent onRequestClose={() => setShowCreateModal(false)}>
+      <View style={s.modalOverlay}>
+        <View style={s.modalCard}>
+          <View style={s.modalHeader}><Text style={font.subtitle}>Nouveau patient</Text><HeaderIconButton icon="close" onPress={() => setShowCreateModal(false)} /></View>
+          <View style={s.modalBody}>
+            <TextField label="Nom complet" placeholder="Ex: Jean Dupont" value={newUsername} onChangeText={setNewUsername} autoCapitalize="words" icon="person-outline" />
+            <TextField label="Email" placeholder="jean.dupont@exemple.com" value={newEmail} onChangeText={setNewEmail} keyboardType="email-address" autoCapitalize="none" icon="mail-outline" />
+            {createError && <Text style={s.createErr}>{createError}</Text>}
           </View>
-          {isDesktop ? (
-            <View style={styles.headerActionsDesktop}>
-              <Pressable
-                onPress={() => router.push('/therapist/settings')}
-                hitSlop={10}
-                style={styles.headerIconButton}
-              >
-                <Ionicons name="settings-outline" size={22} color="#1E293B" />
-              </Pressable>
-              <Pressable onPress={handleSignOut} hitSlop={10}>
-                <Text style={styles.headerLogoutDesktop}>Déconnexion</Text>
-              </Pressable>
-            </View>
-          ) : (
-            <Pressable onPress={() => setMenuOpen(!menuOpen)} hitSlop={10} style={styles.menuButton}>
-              <Ionicons name={menuOpen ? "close" : "menu"} size={28} color="#1E293B" />
-            </Pressable>
-          )}
-        </View>
-
-        {!isDesktop && menuOpen && (
-          <View style={[styles.menuCard, isDesktop && styles.menuCardDesktop]}>
-            <Pressable
-              style={styles.menuItem}
-              onPress={() => {
-                setMenuOpen(false);
-                router.push('/therapist/settings');
-              }}
-            >
-              <Ionicons name="settings-outline" size={20} color="#1E293B" />
-              <Text style={styles.menuItemText}>Paramètres</Text>
-            </Pressable>
-            <Pressable style={styles.menuItem} onPress={handleSignOut}>
-              <Ionicons name="log-out-outline" size={20} color="#EF4444" />
-              <Text style={styles.menuItemTextDanger}>Déconnexion</Text>
-            </Pressable>
+          <View style={s.modalFooter}>
+            <Button title="Annuler" variant="ghost" onPress={() => { setShowCreateModal(false); setCreateError(null); setNewUsername(''); setNewEmail(''); }} style={{ flex: 1 }} />
+            <Button title="Créer le patient" onPress={handleCreatePatient} loading={creating} disabled={!newUsername.trim() || !newEmail.trim()} style={{ flex: 1 }} />
           </View>
-        )}
-
-        {/* Bouton ajouter patient */}
-        <View style={[styles.actionButtonContainer, isDesktop && styles.actionButtonContainerDesktop]}>
-          <Pressable 
-            style={[styles.addButton, isDesktop && styles.addButtonDesktop]}
-            onPress={() => setShowCreateModal(true)}
-          >
-            <Ionicons name="add-circle" size={24} color="#2563EB" />
-            <Text style={styles.addButtonText}>Ajouter un patient</Text>
-          </Pressable>
         </View>
+      </View>
+    </Modal>
+  );
 
-        {/* Liste des patients */}
-        <FlatList
-          key={listKey}
-          data={patients}
-          keyExtractor={(item) => item.id}
-          contentContainerStyle={[styles.listContent, isDesktop && styles.listContentDesktop]}
-          numColumns={numColumns}
-          columnWrapperStyle={isDesktop ? styles.listColumnWrapperDesktop : undefined}
-          ItemSeparatorComponent={isDesktop ? undefined : () => <View style={{ height: 12 }} />}
-          renderItem={renderPatient}
-          ListEmptyComponent={() => (
-            <View style={styles.emptyState}>
-              <Ionicons name="people-outline" size={64} color="#CBD5E1" />
-              <Text style={styles.emptyText}>Aucun patient pour l'instant</Text>
-              <Text style={styles.emptySubtext}>
-                Ajoutez votre premier patient pour commencer le suivi
-              </Text>
+  // ── Desktop ─────────────────────────────────────────────
+  if (isDesktop) {
+    return (
+      <>
+        <View style={s.desktopRoot}>
+          {/* Sidebar */}
+          <View style={s.desktopSidebar}>
+            <View style={s.sidebarHeader}>
+              <View style={s.sidebarLogoRow}>
+                <Image source={require('@/assets/images/logo-mindia.png')} style={s.sidebarLogo} />
+                <Text style={s.sidebarTitle}><Text style={{ color: colors.text }}>Mind</Text><Text style={{ color: colors.primary }}>IA</Text></Text>
+              </View>
+              <Text style={[font.caption, { marginTop: spacing.sm }]}>Dr. {therapistName || 'Thérapeute'}</Text>
             </View>
-          )}
-        />
 
-        {/* Modal de création de patient */}
-        <Modal
-          visible={showCreateModal}
-          animationType="slide"
-          onRequestClose={() => setShowCreateModal(false)}
-        >
-          <View style={styles.modalContainer}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Nouveau patient</Text>
-              <Pressable onPress={() => setShowCreateModal(false)} hitSlop={10}>
-                <Ionicons name="close" size={28} color="#1E293B" />
+            <View style={s.sidebarNav}>
+              <View style={[s.navItem, s.navItemActive]}>
+                <Ionicons name="people" size={20} color={colors.primary} />
+                <Text style={[s.navLabel, s.navLabelActive]}>Mes Patients</Text>
+              </View>
+              <Pressable style={s.navItem} onPress={() => router.push('/therapist/settings')}>
+                <Ionicons name="settings-outline" size={20} color={colors.textTertiary} />
+                <Text style={s.navLabel}>Paramètres</Text>
               </Pressable>
             </View>
-            
-            <View style={styles.modalContent}>
-              <View style={styles.inputContainer}>
-                <Text style={styles.inputLabel}>Nom d'utilisateur</Text>
-                <TextInput
-                  placeholder="Ex: Jean Dupont"
-                  placeholderTextColor="#94A3B8"
-                  value={newPatientUsername}
-                  onChangeText={setNewPatientUsername}
-                  style={styles.input}
-                  autoCapitalize="words"
-                />
-              </View>
-              
-              <View style={styles.inputContainer}>
-                <Text style={styles.inputLabel}>Email</Text>
-                <TextInput
-                  placeholder="jean.dupont@exemple.com"
-                  placeholderTextColor="#94A3B8"
-                  value={newPatientEmail}
-                  onChangeText={setNewPatientEmail}
-                  style={styles.input}
-                  keyboardType="email-address"
-                  autoCapitalize="none"
-                />
-              </View>
 
-              {createError && (
-                <Text style={styles.errorText}>{createError}</Text>
+            <View style={s.sidebarFooter}>
+              <Pressable onPress={handleSignOut} style={s.sidebarSignOut}>
+                <Ionicons name="log-out-outline" size={18} color={colors.error} />
+                <Text style={[font.bodySmall, { color: colors.error, fontWeight: '600' }]}>Déconnexion</Text>
+              </Pressable>
+            </View>
+          </View>
+
+          {/* Main */}
+          <View style={s.desktopMain}>
+            {/* Header */}
+            <View style={s.desktopHeader}>
+              <View>
+                <Text style={font.title}>Mes Patients</Text>
+                <Text style={[font.bodySmall, { marginTop: 2 }]}>Vue d'ensemble de vos patients et de leur état actuel</Text>
+              </View>
+              <Button title="Ajouter un patient" icon="add" onPress={() => setShowCreateModal(true)} />
+            </View>
+
+            {/* Stats */}
+            <View style={s.statsRow}>
+              <View style={s.statCard}>
+                <Text style={s.statNumber}>{patients.length}</Text>
+                <Text style={font.caption}>Patients</Text>
+              </View>
+              {urgentCount > 0 && (
+                <View style={[s.statCard, { borderColor: colors.error }]}>
+                  <Text style={[s.statNumber, { color: colors.error }]}>{urgentCount}</Text>
+                  <Text style={[font.caption, { color: colors.error }]}>En urgence</Text>
+                </View>
+              )}
+              {difficultCount > 0 && (
+                <View style={[s.statCard, { borderColor: colors.warning }]}>
+                  <Text style={[s.statNumber, { color: colors.warning }]}>{difficultCount}</Text>
+                  <Text style={[font.caption, { color: colors.warning }]}>En difficulté</Text>
+                </View>
               )}
             </View>
 
-            <View style={styles.modalFooter}>
-              <Button 
-                title="Annuler" 
-                variant="secondary" 
-                onPress={() => {
-                  setShowCreateModal(false);
-                  setCreateError(null);
-                  setNewPatientUsername('');
-                  setNewPatientEmail('');
-                }}
-              />
-              <Button 
-                title="Créer" 
-                onPress={handleCreatePatient}
-                loading={creating}
-                disabled={!newPatientUsername.trim() || !newPatientEmail.trim()}
-              />
-            </View>
+            {/* Patient list */}
+            <FlatList
+              key="desktop-2"
+              data={patients}
+              keyExtractor={(item) => item.id}
+              contentContainerStyle={s.desktopList}
+              numColumns={2}
+              columnWrapperStyle={s.desktopColumns}
+              ItemSeparatorComponent={() => <View style={{ height: spacing.md }} />}
+              renderItem={renderPatient}
+              ListEmptyComponent={
+                <EmptyState icon="people-outline" title="Aucun patient" subtitle="Ajoutez votre premier patient pour commencer le suivi" action={<Button title="Ajouter un patient" icon="add" size="sm" onPress={() => setShowCreateModal(true)} />} />
+              }
+            />
           </View>
-        </Modal>
+        </View>
+
+        {renderCreateModal()}
+      </>
+    );
+  }
+
+  // ── Mobile ──────────────────────────────────────────────
+  return (
+    <>
+      <View style={s.mobilePage}>
+        {Platform.OS === 'android' && <View style={{ height: layout.safeAreaTop }} />}
+
+        {/* Header */}
+        <View style={s.mobileHeader}>
+          <View style={{ flex: 1 }}>
+            <Text style={font.caption}>Bonjour Dr. {therapistName}</Text>
+            <Text style={font.title}>Mes Patients</Text>
+          </View>
+          <Pressable onPress={() => router.push('/therapist/settings')} style={s.mobileSettingsBtn}>
+            <Ionicons name="settings-outline" size={20} color={colors.primary} />
+          </Pressable>
+          <Pressable onPress={handleSignOut} style={s.mobileLogoutBtn}>
+            <Ionicons name="log-out-outline" size={20} color={colors.error} />
+          </Pressable>
+        </View>
+
+        {/* Add + stats */}
+        <View style={s.mobileActions}>
+          <Pressable style={s.addBtn} onPress={() => setShowCreateModal(true)}>
+            <Ionicons name="add" size={20} color={colors.primary} />
+            <Text style={[font.bodyMedium, { color: colors.primary }]}>Ajouter</Text>
+          </Pressable>
+          <View style={s.mobileStats}>
+            <Text style={font.caption}>{patients.length} patient{patients.length > 1 ? 's' : ''}</Text>
+            {urgentCount > 0 && <Text style={[font.caption, { color: colors.error }]}>· {urgentCount} urgence{urgentCount > 1 ? 's' : ''}</Text>}
+          </View>
+        </View>
+
+        {/* Patient list */}
+        <FlatList
+          key="mobile-1"
+          data={patients}
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={s.mobileList}
+          ItemSeparatorComponent={() => <View style={{ height: spacing.md }} />}
+          renderItem={renderPatient}
+          ListEmptyComponent={
+            <EmptyState icon="people-outline" title="Aucun patient" subtitle="Ajoutez votre premier patient" action={<Button title="Ajouter" icon="add" size="sm" onPress={() => setShowCreateModal(true)} />} />
+          }
+        />
       </View>
+      {renderCreateModal()}
     </>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-  },
-  containerDesktop: {
-    alignItems: 'center',
-    backgroundColor: '#F8FAFC',
-  },
-  safeArea: {
-    paddingTop: Platform.OS === 'android' ? 25 : 0,
-  },
-  centerContent: {
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  loadingText: {
-    fontSize: 16,
-    color: '#64748B',
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
-  },
-  headerDesktop: {
-    maxWidth: 960,
-    width: '100%',
-    alignItems: 'center',
-  },
-  headerContent: {
-    flex: 1,
-  },
-  headerActionsDesktop: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
-  },
-  headerIconButton: {
-    padding: 4,
-  },
-  headerTitle: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: '#1E293B',
-  },
-  headerSubtitle: {
-    fontSize: 15,
-    color: '#64748B',
-    marginTop: 4,
-  },
-  headerLogoutDesktop: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: '#64748B',
-  },
-  menuButton: {
-    padding: 4,
-  },
-  menuCard: {
-    backgroundColor: '#FFFFFF',
-    marginHorizontal: 20,
-    marginTop: 8,
-    borderRadius: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  menuCardDesktop: {
-    maxWidth: 960,
-    width: '100%',
-    alignSelf: 'center',
-  },
-  menuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    padding: 16,
-  },
-  menuItemText: {
-    fontSize: 15,
-    color: '#1E293B',
-  },
-  menuItemTextDanger: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#EF4444',
-  },
-  actionButtonContainer: {
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 12,
-  },
-  actionButtonContainerDesktop: {
-    maxWidth: 960,
-    width: '100%',
-    alignItems: 'flex-end',
-  },
-  addButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    backgroundColor: '#EFF6FF',
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#DBEAFE',
-  },
-  addButtonDesktop: {
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    alignSelf: 'flex-end',
-  },
-  addButtonText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#2563EB',
-  },
-  listContent: {
-    paddingHorizontal: 20,
-    paddingBottom: 20,
-  },
-  listContentDesktop: {
-    maxWidth: 960,
-    width: '100%',
-    alignSelf: 'center',
-    paddingBottom: 28,
-    paddingHorizontal: 0,
-    paddingTop: 4,
-  },
-  listColumnWrapperDesktop: {
-    gap: 12,
-    paddingHorizontal: 20,
-  },
-  patientCard: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 16,
-    padding: 16,
-    gap: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  patientCardDesktop: {
-    flex: 1,
-    marginBottom: 12,
-  },
-  patientHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-  },
-  patientInfo: {
-    flex: 1,
-    gap: 4,
-  },
-  patientName: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#1E293B',
-  },
-  patientMeta: {
-    fontSize: 13,
-    color: '#64748B',
-  },
-  moodBadge: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  moodEmoji: {
-    fontSize: 24,
-  },
-  lastSummary: {
-    fontSize: 14,
-    color: '#475569',
-    lineHeight: 20,
-  },
-  lastSummaryEmpty: {
-    fontSize: 13,
-    color: '#94A3B8',
-    fontStyle: 'italic',
-  },
-  emptyState: {
-    alignItems: 'center',
-    paddingVertical: 60,
-    paddingHorizontal: 40,
-  },
-  emptyText: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#64748B',
-    marginTop: 20,
-    marginBottom: 8,
-  },
-  emptySubtext: {
-    fontSize: 14,
-    color: '#94A3B8',
-    textAlign: 'center',
-    lineHeight: 20,
-  },
-  
+const s = StyleSheet.create({
+  center: { justifyContent: 'center', alignItems: 'center', padding: spacing.xl },
+  errorCard: { backgroundColor: colors.bg, borderRadius: radius['2xl'], padding: spacing['3xl'], alignItems: 'center', maxWidth: 380, width: '100%', gap: spacing.lg, ...shadows.lg },
+
+  // Desktop layout
+  desktopRoot: { flex: 1, flexDirection: 'row', backgroundColor: colors.bgDesktop },
+  desktopSidebar: { width: 260, backgroundColor: colors.bg, borderRightWidth: 1, borderRightColor: colors.borderLight, paddingVertical: spacing['2xl'], justifyContent: 'space-between' },
+  sidebarHeader: { paddingHorizontal: spacing['2xl'], marginBottom: spacing['3xl'] },
+  sidebarLogoRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  sidebarLogo: { width: 36, height: 36 },
+  sidebarTitle: { fontSize: 22, fontWeight: '800', letterSpacing: -0.5 },
+  sidebarNav: { flex: 1, gap: spacing.xs, paddingHorizontal: spacing.md },
+  navItem: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: spacing.md, paddingHorizontal: spacing.lg, borderRadius: radius.lg },
+  navItemActive: { backgroundColor: colors.primaryLight },
+  navLabel: { ...font.bodyMedium, color: colors.textSecondary },
+  navLabelActive: { color: colors.primary, fontWeight: '700' },
+  sidebarFooter: { paddingHorizontal: spacing['2xl'], paddingTop: spacing.lg, borderTopWidth: 1, borderTopColor: colors.borderLight },
+  sidebarSignOut: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.md },
+  desktopMain: { flex: 1 },
+  desktopHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: spacing['3xl'], paddingTop: spacing['2xl'], paddingBottom: spacing.lg, borderBottomWidth: 1, borderBottomColor: colors.borderLight, backgroundColor: colors.bg },
+  statsRow: { flexDirection: 'row', gap: spacing.md, paddingHorizontal: spacing['3xl'], paddingVertical: spacing.lg },
+  statCard: { paddingHorizontal: spacing.xl, paddingVertical: spacing.md, borderRadius: radius.lg, backgroundColor: colors.bg, borderWidth: 1.5, borderColor: colors.borderLight, alignItems: 'center', minWidth: 100 },
+  statNumber: { fontSize: 24, fontWeight: '800', color: colors.primary },
+  desktopList: { paddingHorizontal: spacing['3xl'], paddingBottom: spacing['4xl'] },
+  desktopColumns: { gap: spacing.md },
+
+  // Mobile layout
+  mobilePage: { flex: 1, backgroundColor: colors.bg },
+  mobileHeader: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: layout.pagePadding, paddingTop: spacing.xl, paddingBottom: spacing.md, gap: spacing.sm },
+  mobileActions: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: layout.pagePadding, paddingBottom: spacing.md },
+  mobileSettingsBtn: { width: 40, height: 40, borderRadius: radius.full, backgroundColor: colors.primaryLight, alignItems: 'center', justifyContent: 'center' },
+  mobileLogoutBtn: { width: 40, height: 40, borderRadius: radius.full, backgroundColor: colors.errorLight, alignItems: 'center', justifyContent: 'center' },
+  addBtn: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.primaryLight, paddingVertical: spacing.sm + 2, paddingHorizontal: spacing.lg, borderRadius: radius.full, borderWidth: 1, borderColor: colors.primaryMedium },
+  mobileStats: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  mobileList: { paddingHorizontal: layout.pagePadding, paddingBottom: spacing['4xl'] },
+
+  // Patient card
+  patientCard: { backgroundColor: colors.bg, borderRadius: radius.xl, padding: spacing.xl, borderWidth: 1, borderColor: colors.borderLight, ...shadows.sm },
+  patientCardDesktop: { flex: 1 },
+  patientCardPressed: { backgroundColor: colors.bgSecondary, borderColor: colors.primaryMedium },
+  patientRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  patientAvatar: { width: 48, height: 48, borderRadius: radius.lg, justifyContent: 'center', alignItems: 'center' },
+  patientName: { ...font.bodyMedium, fontWeight: '700', fontSize: 16 },
+  moodPill: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, paddingHorizontal: spacing.md, paddingVertical: spacing.xs + 1, borderRadius: radius.full },
+  moodDot: { width: 8, height: 8, borderRadius: 4 },
+
   // Modal
-  modalContainer: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#1E293B',
-  },
-  modalContent: {
-    flex: 1,
-    padding: 20,
-    gap: 20,
-  },
-  inputContainer: {
-    gap: 8,
-  },
-  inputLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#475569',
-  },
-  input: {
-    backgroundColor: '#F8FAFC',
-    borderWidth: 1,
-    borderColor: '#E2E8F0',
-    borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    fontSize: 15,
-    color: '#1E293B',
-  },
-  modalFooter: {
-    flexDirection: 'row',
-    gap: 12,
-    padding: 20,
-    borderTopWidth: 1,
-    borderTopColor: '#F1F5F9',
-  },
-  
-  // Error
-  errorCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    padding: 24,
-    alignItems: 'center',
-    maxWidth: 350,
-    width: '100%',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 5,
-  },
-  errorTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#EF4444',
-    marginBottom: 8,
-  },
-  errorMessage: {
-    fontSize: 14,
-    color: '#64748B',
-    textAlign: 'center',
-    marginBottom: 16,
-  },
-  errorText: {
-    color: '#EF4444',
-    fontSize: 14,
-    textAlign: 'center',
-  },
+  modalOverlay: { flex: 1, backgroundColor: colors.overlay, justifyContent: 'center', alignItems: 'center', padding: spacing['2xl'] },
+  modalCard: { backgroundColor: colors.bg, borderRadius: radius['2xl'], width: '100%', maxWidth: 440, maxHeight: '90%', ...shadows.lg },
+  modalHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: spacing['2xl'], paddingTop: spacing['2xl'], paddingBottom: spacing.lg },
+  modalBody: { paddingHorizontal: spacing['2xl'], gap: spacing.xl, paddingBottom: spacing.xl },
+  modalFooter: { flexDirection: 'row', gap: spacing.md, paddingHorizontal: spacing['2xl'], paddingVertical: spacing.xl, borderTopWidth: 1, borderTopColor: colors.borderLight },
+  createErr: { color: colors.error, fontSize: 14, textAlign: 'center' },
 });

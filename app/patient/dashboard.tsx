@@ -1,157 +1,143 @@
 import { useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, View, Pressable, Linking, Text, StatusBar, Alert, Platform, useWindowDimensions } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import {
+  StyleSheet, View, Pressable, Linking, Text, Alert, Platform, TextInput, ScrollView,
+} from 'react-native';
+import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
 
 import { Button } from '@/components/ui/button';
-import { PrimaryTabs } from '@/components/primary-tabs';
+import { PageLayout, HeaderIconButton } from '@/components/ui/page-layout';
+import { BottomTabBar, type TabItem } from '@/components/ui/bottom-tab-bar';
+import { EmptyState } from '@/components/ui/empty-state';
+import { ReportCard } from '@/components/ui/report-card';
+import { MoodSelector } from '@/components/ui/mood-selector';
+import { SectionCard } from '@/components/ui/section-card';
+import { useIsDesktop } from '@/hooks/use-breakpoint';
 import { useSession } from '@/lib/session-context';
 import { api } from '@/lib/api';
-import { listChatSessionsForPatient, setSeverity, setSummaryAndKeywords, simpleAutoSummary, startChatSession } from '@/lib/chat';
+import {
+  listChatSessionsForPatient, setSeverity, setSummaryAndKeywords,
+  simpleAutoSummary, startChatSession,
+} from '@/lib/chat';
 import { getTherapistById } from '@/lib/people';
 import type { Severity } from '@/lib/types';
+import { colors, spacing, radius, shadows, font, layout } from '@/constants/tokens';
 
-// Chargement conditionnel de react-calendly uniquement sur le web
+// Calendly (web only)
 let InlineWidget: any | null = null;
 if (Platform.OS === 'web') {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   InlineWidget = require('react-calendly').InlineWidget;
 }
 
-interface Report {
-  _id: string;
-  date: string;
-  content: string;
-  from: 'therapist' | 'ai';
-}
+interface Report { _id: string; date: string; content: string; from: 'therapist' | 'ai'; }
 
-interface PatientInfo {
-  username: string;
-  email: string;
-  lastSessionAt?: string;
-  nextSessionAt?: string;
-  sessionsDone?: number;
-  therapyTopic?: string;
-  bookingUrl?: string;
-}
+const BOTTOM_TABS: TabItem[] = [
+  { key: 'bubble', label: 'Bulle', icon: 'chatbubbles-outline', iconActive: 'chatbubbles' },
+  { key: 'journal', label: 'Journal', icon: 'book-outline', iconActive: 'book' },
+  { key: 'reports', label: 'Constats', icon: 'reader-outline', iconActive: 'reader' },
+  { key: 'booking', label: 'RDV', icon: 'calendar-outline', iconActive: 'calendar' },
+];
+
+const DESKTOP_NAV = [
+  { key: 'bubble', label: 'Ma Bulle', icon: 'chatbubbles-outline' as const, iconActive: 'chatbubbles' as const, desc: 'Parler à ton assistant IA' },
+  { key: 'journal', label: 'Journal', icon: 'book-outline' as const, iconActive: 'book' as const, desc: 'Écrire ton ressenti au quotidien' },
+  { key: 'reports', label: 'Constats', icon: 'reader-outline' as const, iconActive: 'reader' as const, desc: 'Observations de ton thérapeute' },
+  { key: 'booking', label: 'Rendez-vous', icon: 'calendar-outline' as const, iconActive: 'calendar' as const, desc: 'Prendre RDV en ligne' },
+];
 
 export default function PatientDashboardScreen() {
   const router = useRouter();
   const { session, signOut, loading: sessionLoading } = useSession();
-  const { width } = useWindowDimensions();
-  const [patientInfo, setPatientInfo] = useState<PatientInfo | null>(null);
+  const isDesktop = useIsDesktop();
+  const hasRedirected = useRef(false);
+
+  const [patientName, setPatientName] = useState('');
   const [reports, setReports] = useState<Report[]>([]);
   const [lastSummary, setLastSummary] = useState<string | null>(null);
   const [chatSessionId, setChatSessionId] = useState<string | null>(null);
   const [mood, setMood] = useState<Severity | undefined>();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [therapistName, setTherapistName] = useState<string>('');
+  const [therapistName, setTherapistName] = useState('');
   const [therapistBookingUrl, setTherapistBookingUrl] = useState<string | null>(null);
-  
-  // Navigation state
-  const [activeTab, setActiveTab] = useState<'bubble' | 'reports' | 'booking'>('bubble');
-  const [reportsView, setReportsView] = useState<'therapist' | 'last'>('therapist');
-  const [menuOpen, setMenuOpen] = useState(false);
 
-  const isDesktop = Platform.OS === 'web' && width >= 1024;
+  const [activeTab, setActiveTab] = useState<string>('bubble');
+  // (no dropdown menu on mobile – direct buttons instead)
+
+  // Journaling
+  const [journalEntries, setJournalEntries] = useState<any[]>([]);
+  const [newJournalText, setNewJournalText] = useState('');
+  const [newJournalMood, setNewJournalMood] = useState(3);
+  const [savingJournal, setSavingJournal] = useState(false);
+
+  // Reports sub-tab: 'therapist' or 'ai'
+  const [reportsSub, setReportsSub] = useState<'therapist' | 'ai'>('therapist');
 
   useEffect(() => {
     if (sessionLoading) return;
-
     if (!session || session.role !== 'patient') {
-      const timeout = setTimeout(() => {
-        router.replace('/patient');
-      }, 0);
-      return () => clearTimeout(timeout);
+      if (!hasRedirected.current) {
+        hasRedirected.current = true;
+        router.replace('/');
+      }
+      return;
     }
-
     loadData();
-  }, [session, sessionLoading, router]);
+  }, [session, sessionLoading]);
 
   const loadData = async () => {
     if (!session || session.role !== 'patient') return;
-    
     const patientId = session.patientId;
-    
     setLoading(true);
     setError(null);
-    
     try {
-      // Charger les infos du patient
       const { user } = await api.users.getById(patientId);
-      setPatientInfo(user);
+      setPatientName(user.username || '');
 
-      // Charger le nom complet du thérapeute pour l'onglet Rendez-vous
       if (session.therapistId) {
         try {
-          const therapist = await getTherapistById(session.therapistId);
-          if (therapist) {
-            setTherapistName(`${therapist.firstName} ${therapist.lastName}`);
+          const t = await getTherapistById(session.therapistId);
+          if (t) {
+            setTherapistName(`${t.firstName} ${t.lastName}`.trim());
+            if (t.bookingUrl) setTherapistBookingUrl(t.bookingUrl);
           }
-        } catch (e) {
-          console.warn('Erreur chargement thérapeute pour Calendly:', e);
-        }
+        } catch { /* silent */ }
       }
 
-      // Charger les infos du thérapeute (nom complet + lien de réservation)
-      if (session.therapistId) {
-        try {
-          const therapist = await getTherapistById(session.therapistId);
-          if (therapist) {
-            setTherapistName(`${therapist.firstName} ${therapist.lastName}`.trim());
-            if (therapist.bookingUrl) {
-              setTherapistBookingUrl(therapist.bookingUrl);
-            }
-          }
-        } catch (e) {
-          console.warn('Erreur chargement thérapeute pour patient dashboard:', e);
-        }
-      }
-
-      // Déterminer le mood initial à partir de actual_mood si présent
       let moodFromUser: Severity | undefined;
       if (user.actual_mood) {
-        const parsed = parseInt(String(user.actual_mood), 10);
-        if (parsed === 1 || parsed === 2 || parsed === 3) {
-          moodFromUser = parsed as Severity;
-          setMood(moodFromUser);
-        }
-      }
-      
-      // Charger les constats
-      const { reports: reportsData } = await api.reports.get(patientId);
-      setReports(reportsData || []);
-      
-      // Charger les messages pour la dernière synthèse (messages IA)
-      const { messages } = await api.messages.get(patientId);
-      const aiMessages = messages.filter((m: any) => m.from === 'ai');
-      if (aiMessages.length > 0) {
-        setLastSummary(aiMessages[aiMessages.length - 1].text);
+        const p = parseInt(String(user.actual_mood), 10);
+        if (p === 1 || p === 2 || p === 3) { moodFromUser = p as Severity; setMood(moodFromUser); }
       }
 
-      // Préparer la session de bulle pour le mood
+      const { reports: reps } = await api.reports.get(patientId);
+      setReports(reps || []);
+
+      const { messages } = await api.messages.get(patientId);
+      const aiMsgs = messages.filter((m: any) => m.from === 'ai');
+      if (aiMsgs.length > 0) setLastSummary(aiMsgs[aiMsgs.length - 1].text);
+
+      try {
+        const { entries } = await api.journal.get(patientId);
+        setJournalEntries(entries || []);
+      } catch { /* silent */ }
+
       const sessions = await listChatSessionsForPatient(patientId);
       if (sessions.length > 0) {
-        const latest = sessions[0];
-        setChatSessionId(latest.id);
-        // Ne pas écraser le mood venant de actual_mood
-        if (!moodFromUser) {
-          setMood(latest.severity);
-        }
+        setChatSessionId(sessions[0].id);
+        if (!moodFromUser) setMood(sessions[0].severity);
       } else {
         const created = await startChatSession(patientId, session.therapistId);
         setChatSessionId(created.id);
-        if (!moodFromUser) {
-          setMood(created.severity);
-        }
+        if (!moodFromUser) setMood(created.severity);
       }
     } catch (err: any) {
-      console.error('Erreur chargement dashboard patient:', err);
       if (err?.status === 401 || err?.message?.toLowerCase().includes('token')) {
         await handleSignOut();
       } else {
-        setError('Impossible de charger tes informations. Réessaye plus tard.');
+        setError('Impossible de charger tes informations.');
       }
     } finally {
       setLoading(false);
@@ -159,1415 +145,385 @@ export default function PatientDashboardScreen() {
   };
 
   const handleSignOut = async () => {
-    setMenuOpen(false);
     await signOut();
     router.replace('/');
   };
 
-  const handleOpenChat = () => {
-    router.push('/patient/chat');
-  };
-
   const handleSelectMood = async (value: Severity) => {
-    if (!chatSessionId || !session?.patientId) return;
+    if (!chatSessionId || !session || session.role !== 'patient') return;
     try {
-      console.log('[Mood] Mise à jour actual_mood pour patient:', session.patientId, 'valeur:', value);
-      await api.users.update(session.patientId, { actual_mood: String(value) });
-      console.log('[Mood] actual_mood mis à jour avec succès');
-
+      await api.users.update(session.patientId, { actual_mood: String(value) } as any);
       const updated = await setSeverity(chatSessionId, value);
       setMood(updated.severity);
-
       const { summary, keywords } = simpleAutoSummary(updated.messages);
       await setSummaryAndKeywords(chatSessionId, summary, keywords);
-    } catch (e) {
-      console.error('Erreur lors de la mise à jour du mood:', e);
-      Alert.alert('Erreur', 'Impossible de sauvegarder votre état. Réessayez plus tard.');
+    } catch { Alert.alert('Erreur', 'Impossible de sauvegarder.'); }
+  };
+
+  const handleSaveJournal = async () => {
+    if (!session || session.role !== 'patient' || !newJournalText.trim()) return;
+    setSavingJournal(true);
+    try {
+      const { entry } = await api.journal.add(session.patientId, { text: newJournalText.trim(), mood: newJournalMood });
+      setJournalEntries((prev) => [entry, ...prev]);
+      setNewJournalText('');
+      setNewJournalMood(3);
+    } catch { Alert.alert('Erreur', 'Impossible de sauvegarder.'); }
+    finally { setSavingJournal(false); }
+  };
+
+  const fmtDate = (d: string) => new Date(d).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+  // ── Loading / Error states ──────────────────────────────
+  if (sessionLoading || loading) {
+    return <View style={[s.center, { flex: 1, backgroundColor: colors.bg }]}><Text style={font.bodySmall}>Chargement…</Text></View>;
+  }
+  if (error) {
+    return (
+      <View style={[s.center, { flex: 1, backgroundColor: colors.bg }]}>
+        <SectionCard variant="elevated" style={{ maxWidth: 360, alignItems: 'center' as any }}>
+          <Ionicons name="alert-circle" size={48} color={colors.error} />
+          <Text style={[font.subtitle, { color: colors.error }]}>Oups !</Text>
+          <Text style={[font.bodySmall, { textAlign: 'center' }]}>{error}</Text>
+          <Button title="Réessayer" onPress={loadData} />
+          <Button title="Déconnexion" variant="ghost" onPress={handleSignOut} />
+        </SectionCard>
+      </View>
+    );
+  }
+
+  const therapistReports = reports.filter((r) => r.from === 'therapist');
+  const aiReports = reports.filter((r) => r.from === 'ai');
+
+  // ── Section descriptions ────────────────────────────────
+  const sectionDescs: Record<string, { title: string; desc: string; icon: keyof typeof Ionicons.glyphMap }> = {
+    bubble: { title: 'Ma Bulle', desc: 'Un espace confidentiel pour échanger avec ton assistant IA, disponible 24h/24. Il t\'aide à explorer tes émotions entre les séances.', icon: 'chatbubbles' },
+    journal: { title: 'Mon Journal', desc: 'Garde une trace de tes ressentis au quotidien. Cela t\'aide, toi et ton thérapeute, à identifier des tendances.', icon: 'book' },
+    reports: { title: 'Constats & Synthèses', desc: 'Retrouve ici les observations de ton thérapeute et les synthèses générées par l\'IA après tes échanges.', icon: 'reader' },
+    booking: { title: 'Rendez-vous', desc: 'Réserve un créneau avec ton thérapeute directement en ligne.', icon: 'calendar' },
+  };
+  const currentSection = sectionDescs[activeTab] || sectionDescs.bubble;
+
+  // ── Header ──────────────────────────────────────────────
+  const headerRight = isDesktop ? (
+    <Pressable onPress={handleSignOut} style={s.signOutBtn}>
+      <Ionicons name="log-out-outline" size={18} color={colors.textSecondary} />
+      <Text style={[font.bodySmall, { fontWeight: '600' }]}>Déconnexion</Text>
+    </Pressable>
+  ) : (
+    <Pressable onPress={handleSignOut} style={s.mobileLogoutBtn}>
+      <Ionicons name="log-out-outline" size={20} color={colors.error} />
+    </Pressable>
+  );
+
+  // ── Tab: Bulle ──────────────────────────────────────────
+  const renderBubble = () => (
+    <View style={s.tabContent}>
+      {/* Hero card */}
+      <View style={s.heroCard}>
+        <View style={s.heroGlow} />
+        <View style={s.heroAvatar}><Text style={{ fontSize: 44 }}>🤖</Text></View>
+        <Text style={s.heroTitle}>Assistant IA</Text>
+        <Text style={s.heroDesc}>Un espace sûr pour exprimer tes émotions, disponible 24/7</Text>
+        <Button title="Entrer dans ma bulle" icon="arrow-forward" onPress={() => router.push('/patient/chat')} size="lg" style={{ width: '100%', maxWidth: 300 }} />
+      </View>
+
+      {/* Mood */}
+      <MoodSelector value={mood} onChange={handleSelectMood} />
+
+      {/* Quick exercises */}
+      <SectionCard title="Exercices rapides" icon="fitness-outline" variant="elevated">
+        <Text style={font.bodySmall}>Des exercices simples pour t'apaiser en quelques minutes.</Text>
+        {[
+          { icon: 'fitness' as const, title: 'Respiration profonde', desc: 'Inspire 4s, retiens 4s, expire 6s', color: colors.primary },
+          { icon: 'walk' as const, title: 'Marche de 5 min', desc: "Sors prendre l'air", color: colors.success },
+          { icon: 'call' as const, title: 'Contacter un proche', desc: 'Parler peut aider', color: colors.warning },
+        ].map((ex, i) => (
+          <View key={i} style={s.exerciseRow}>
+            <View style={[s.exerciseIcon, { backgroundColor: ex.color + '14' }]}>
+              <Ionicons name={ex.icon} size={20} color={ex.color} />
+            </View>
+            <View style={{ flex: 1 }}><Text style={font.bodyMedium}>{ex.title}</Text><Text style={font.caption}>{ex.desc}</Text></View>
+          </View>
+        ))}
+      </SectionCard>
+
+      {/* Booking shortcut */}
+      {therapistBookingUrl && (
+        <SectionCard title="Prochain RDV" icon="calendar-outline" variant="elevated">
+          <Text style={font.bodySmall}>Planifie une séance avec {therapistName || 'ton thérapeute'}.</Text>
+          <Button title="Voir les créneaux" icon="calendar-outline" variant="soft" size="sm" onPress={() => setActiveTab('booking')} />
+        </SectionCard>
+      )}
+    </View>
+  );
+
+  // ── Tab: Journal ────────────────────────────────────────
+  const MOOD_LABELS = ['', 'Très mal', 'Mal', 'Moyen', 'Bien', 'Très bien'];
+  const MOOD_EMOJI = ['', '😢', '😕', '😐', '🙂', '😄'];
+  const renderJournal = () => (
+    <View style={s.tabContent}>
+      <SectionCard title="Nouvelle entrée" icon="create-outline" variant="elevated">
+        <TextInput
+          placeholder="Comment te sens-tu aujourd'hui ?"
+          placeholderTextColor={colors.textTertiary}
+          multiline numberOfLines={4} value={newJournalText} onChangeText={setNewJournalText}
+          style={s.journalInput} textAlignVertical="top"
+        />
+        <View style={s.moodChipRow}>
+          <Text style={font.label}>Humeur :</Text>
+          {[1, 2, 3, 4, 5].map((v) => (
+            <Pressable key={v} onPress={() => setNewJournalMood(v)} style={[s.moodChip, newJournalMood === v && s.moodChipActive]}>
+              <Text style={{ fontSize: 16 }}>{MOOD_EMOJI[v]}</Text>
+              <Text style={[s.moodChipLabel, newJournalMood === v && { color: colors.textOnPrimary }]}>{MOOD_LABELS[v]}</Text>
+            </Pressable>
+          ))}
+        </View>
+        <Button title="Enregistrer" icon="checkmark" onPress={handleSaveJournal} loading={savingJournal} disabled={!newJournalText.trim()} size="sm" />
+      </SectionCard>
+
+      {journalEntries.length === 0 ? (
+        <EmptyState icon="book-outline" title="Aucune entrée" subtitle="Commence à écrire ton journal pour garder une trace de tes ressentis" />
+      ) : (
+        <View style={s.cardList}>
+          {journalEntries.map((entry: any) => (
+            <SectionCard key={entry._id} variant="elevated" style={{ gap: spacing.sm }}>
+              <View style={s.journalEntryHeader}>
+                <View style={s.journalMoodBadge}>
+                  <Text style={{ fontSize: 16 }}>{MOOD_EMOJI[entry.mood || 3]}</Text>
+                  <Text style={font.caption}>{MOOD_LABELS[entry.mood || 3]}</Text>
+                </View>
+                <Text style={font.caption}>{fmtDate(entry.date)}</Text>
+              </View>
+              <Text style={font.bodySmall}>{entry.text}</Text>
+            </SectionCard>
+          ))}
+        </View>
+      )}
+    </View>
+  );
+
+  // ── Tab: Reports (SEPARATED) ────────────────────────────
+  const renderReports = () => (
+    <View style={s.tabContent}>
+      {/* Sub-tabs: Thérapeute / IA */}
+      <View style={s.subTabRow}>
+        <Pressable onPress={() => setReportsSub('therapist')} style={[s.subTab, reportsSub === 'therapist' && s.subTabActive]}>
+          <Ionicons name="person" size={16} color={reportsSub === 'therapist' ? colors.primary : colors.textTertiary} />
+          <Text style={[s.subTabText, reportsSub === 'therapist' && s.subTabTextActive]}>Constats du thérapeute</Text>
+          {therapistReports.length > 0 && <View style={s.subTabBadge}><Text style={s.subTabBadgeText}>{therapistReports.length}</Text></View>}
+        </Pressable>
+        <Pressable onPress={() => setReportsSub('ai')} style={[s.subTab, reportsSub === 'ai' && s.subTabActive]}>
+          <Ionicons name="sparkles" size={16} color={reportsSub === 'ai' ? colors.ai : colors.textTertiary} />
+          <Text style={[s.subTabText, reportsSub === 'ai' && s.subTabTextActive]}>Synthèses IA</Text>
+          {aiReports.length > 0 && <View style={[s.subTabBadge, { backgroundColor: colors.aiLight }]}><Text style={[s.subTabBadgeText, { color: colors.ai }]}>{aiReports.length}</Text></View>}
+        </Pressable>
+      </View>
+
+      {/* Description */}
+      <View style={s.sectionHint}>
+        <Ionicons name="information-circle-outline" size={16} color={colors.textTertiary} />
+        <Text style={[font.caption, { flex: 1 }]}>
+          {reportsSub === 'therapist'
+            ? 'Observations rédigées par ton thérapeute après vos séances. Elles t\'aident à suivre ta progression.'
+            : 'Synthèses automatiques générées par l\'IA à partir de tes échanges dans la bulle. Elles ne remplacent pas l\'avis de ton thérapeute.'}
+        </Text>
+      </View>
+
+      {/* Content */}
+      {reportsSub === 'therapist' ? (
+        therapistReports.length === 0 ? (
+          <EmptyState icon="document-text-outline" title="Aucun constat" subtitle="Ton thérapeute notera ses observations après vos séances" />
+        ) : (
+          <View style={s.cardList}>{therapistReports.map((r) => <ReportCard key={r._id} content={r.content} date={fmtDate(r.date)} from={r.from} />)}</View>
+        )
+      ) : (
+        <>
+          {lastSummary && (
+            <SectionCard icon="sparkles" iconColor={colors.ai} variant="elevated">
+              <Text style={[font.label, { color: colors.ai }]}>Dernière synthèse</Text>
+              <Text style={font.bodySmall}>{lastSummary}</Text>
+            </SectionCard>
+          )}
+          {aiReports.length === 0 && !lastSummary ? (
+            <EmptyState icon="sparkles-outline" title="Aucune synthèse IA" subtitle="L'IA créera une synthèse après tes échanges dans la bulle" />
+          ) : (
+            <View style={s.cardList}>{aiReports.map((r) => <ReportCard key={r._id} content={r.content} date={fmtDate(r.date)} from={r.from} />)}</View>
+          )}
+        </>
+      )}
+    </View>
+  );
+
+  // ── Tab: Booking ────────────────────────────────────────
+  const renderBooking = () => (
+    <View style={s.tabContent}>
+      {therapistBookingUrl ? (
+        <>
+          <SectionCard variant="highlight" icon="calendar" iconColor={colors.primary}>
+            <Text style={font.subtitle}>Prendre rendez-vous avec {therapistName || 'ton thérapeute'}</Text>
+            <Text style={font.bodySmall}>Choisis le créneau qui te convient le mieux.</Text>
+          </SectionCard>
+          {Platform.OS === 'web' && InlineWidget ? (
+            <View style={s.calendlyWrap}><InlineWidget url={therapistBookingUrl} styles={{ height: '650px' }} /></View>
+          ) : (
+            <SectionCard variant="dark">
+              <Text style={[font.body, { color: colors.textOnDark }]}>Calendrier en ligne</Text>
+              <Text style={[font.bodySmall, { color: colors.textTertiary }]}>Tu seras redirigé(e) vers la page de réservation.</Text>
+              <Button title="Ouvrir Calendly" icon="calendar-outline" onPress={() => Linking.openURL(therapistBookingUrl)} />
+            </SectionCard>
+          )}
+        </>
+      ) : (
+        <EmptyState icon="time-outline" title="Bientôt disponible" subtitle="Ton thérapeute n'a pas encore configuré la réservation en ligne." />
+      )}
+    </View>
+  );
+
+  // ── Render ──────────────────────────────────────────────
+  const renderContent = () => {
+    switch (activeTab) {
+      case 'bubble': return renderBubble();
+      case 'journal': return renderJournal();
+      case 'reports': return renderReports();
+      case 'booking': return renderBooking();
+      default: return renderBubble();
     }
   };
 
-  const formatDateTime = (dateStr: string) => {
-    return new Date(dateStr).toLocaleDateString('fr-FR', {
-      day: 'numeric',
-      month: 'short',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  };
-
-  if (sessionLoading || loading) {
+  if (isDesktop) {
     return (
-      <View style={[styles.container, styles.center]}>
-        <Text style={styles.loadingText}>Chargement...</Text>
-      </View>
-    );
-  }
+      <View style={s.desktopRoot}>
+        {/* Sidebar */}
+        <View style={s.desktopSidebar}>
+          <View style={s.sidebarHeader}>
+            <View style={s.sidebarLogoRow}>
+              <Image source={require('@/assets/images/logo-mindia.png')} style={s.sidebarLogo} />
+              <Text style={s.sidebarTitle}>
+                <Text style={{ color: colors.text }}>Mind</Text>
+                <Text style={{ color: colors.primary }}>IA</Text>
+              </Text>
+            </View>
+            <Text style={[font.caption, { marginTop: spacing.sm }]}>Bonjour {patientName || 'toi'} 👋</Text>
+          </View>
 
-  if (error) {
-    return (
-      <View style={[styles.container, styles.center]}>
-        <View style={styles.errorCard}>
-          <Text style={styles.errorTitle}>Oups !</Text>
-          <Text style={styles.errorText}>{error}</Text>
-          <Button title="Réessayer" onPress={loadData} style={{ marginTop: 16 }} />
-          <Button title="Se déconnecter" variant="secondary" onPress={handleSignOut} style={{ marginTop: 8 }} />
+          <View style={s.sidebarNav}>
+            {DESKTOP_NAV.map((item) => {
+              const active = item.key === activeTab;
+              return (
+                <Pressable key={item.key} onPress={() => setActiveTab(item.key)} style={[s.navItem, active && s.navItemActive]}>
+                  <Ionicons name={active ? item.iconActive : item.icon} size={20} color={active ? colors.primary : colors.textTertiary} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={[s.navLabel, active && s.navLabelActive]}>{item.label}</Text>
+                    <Text style={s.navDesc}>{item.desc}</Text>
+                  </View>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          <View style={s.sidebarFooter}>
+            <Pressable onPress={handleSignOut} style={s.sidebarSignOut}>
+              <Ionicons name="log-out-outline" size={18} color={colors.error} />
+              <Text style={[font.bodySmall, { color: colors.error, fontWeight: '600' }]}>Déconnexion</Text>
+            </Pressable>
+          </View>
+        </View>
+
+        {/* Main */}
+        <View style={s.desktopMain}>
+          <View style={s.desktopContentHeader}>
+            <View>
+              <Text style={font.title}>{currentSection.title}</Text>
+              <Text style={[font.bodySmall, { marginTop: 2, maxWidth: 600 }]}>{currentSection.desc}</Text>
+            </View>
+          </View>
+          <ScrollView contentContainerStyle={s.desktopScroll} showsVerticalScrollIndicator={false}>
+            {renderContent()}
+          </ScrollView>
         </View>
       </View>
     );
   }
 
+  // ── Mobile ──────────────────────────────────────────────
   return (
-    <>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-      <View style={[styles.container, isDesktop && styles.containerDesktop]}>
-        <View style={styles.safeArea} />
-        {/* Header */}
-        <View style={[styles.header, isDesktop && styles.headerDesktop]}>
-          <View style={styles.headerLeft}>
-            <Text style={styles.titleText}>
-              {activeTab === 'bubble' ? 'Ma Bulle' : 'Synthèses'}
-            </Text>
-            <Text style={styles.greeting}>
-              Bonjour {patientInfo?.username || 'toi'} 👋
-            </Text>
-          </View>
-          {isDesktop ? (
-            <Pressable onPress={handleSignOut} hitSlop={10}>
-              <Text style={styles.logoutText}>Déconnexion</Text>
-            </Pressable>
-          ) : (
-            <Pressable onPress={() => setMenuOpen(!menuOpen)} hitSlop={10} style={styles.menuButton}>
-              <Ionicons name={menuOpen ? 'close' : 'menu'} size={28} color="#1E293B" />
-            </Pressable>
-          )}
+    <PageLayout
+      title={currentSection.title}
+      subtitle={`Bonjour ${patientName || 'toi'} 👋`}
+      headerRight={headerRight}
+      stickyContent={
+        <View style={s.mobileDesc}>
+          <Ionicons name={currentSection.icon} size={16} color={colors.primary} />
+          <Text style={[font.caption, { flex: 1 }]}>{currentSection.desc}</Text>
         </View>
-
-        {!isDesktop && menuOpen && (
-          <View style={styles.menuCard}>
-            <Pressable style={styles.menuItem} onPress={handleSignOut}>
-              <Ionicons name="log-out-outline" size={20} color="#EF4444" />
-              <Text style={styles.menuItemTextDanger}>Déconnexion</Text>
-            </Pressable>
-          </View>
-        )}
-
-        {/* Onglets principaux (desktop uniquement) */}
-        {isDesktop && (
-          <PrimaryTabs
-            tabs={[
-              { key: 'bubble', label: 'Bulle' },
-              { key: 'reports', label: 'Synthèses' },
-              { key: 'booking', label: 'Rendez-vous' },
-            ]}
-            activeKey={activeTab}
-            onChange={(key) =>
-              setActiveTab(key as 'bubble' | 'reports' | 'booking')
-            }
-            style={styles.desktopTabs}
-          />
-        )}
-
-        {/* Contenu (UI mobile vs UI desktop dédiée) */}
-        {isDesktop ? (
-          <ScrollView
-            contentContainerStyle={[styles.scrollContent, styles.scrollContentDesktop]}
-            showsVerticalScrollIndicator={false}
-          >
-            {activeTab === 'bubble' && (
-              <View
-                style={[styles.bubbleLayout, styles.bubbleLayoutDesktop]}
-              >
-                <View
-                  style={[
-                    styles.bubbleLeft,
-                    styles.bubbleLeftDesktop,
-                  ]}
-                >
-                  {/* Card IA Bulle */}
-                  <View style={styles.aiCard}>
-                    <View style={styles.aiIllustration}>
-                      <Text style={styles.aiEmoji}>🤖</Text>
-                    </View>
-                    <Text style={styles.aiName}>Assistant IA</Text>
-                    <Text style={styles.aiSubtext}>
-                      Un espace sûr pour exprimer tes émotions, disponible 24/7
-                    </Text>
-                    <Pressable
-                      style={styles.bubbleButton}
-                      onPress={handleOpenChat}
-                    >
-                      <Text style={styles.bubbleButtonText}>
-                        Entrer dans ma bulle
-                      </Text>
-                      <Ionicons
-                        name="arrow-forward"
-                        size={20}
-                        color="#FFFFFF"
-                      />
-                    </Pressable>
-                  </View>
-
-                  {/* Comment te sens-tu ? */}
-                  <View style={styles.moodSection}>
-                    <Text style={styles.sectionTitle}>
-                      Comment te sens-tu ?
-                    </Text>
-                    <View style={styles.moodButtons}>
-                      <Pressable
-                        style={[
-                          styles.moodButton,
-                          mood === 1 && styles.moodButtonActive,
-                        ]}
-                        onPress={() => handleSelectMood(1)}
-                      >
-                        <Text style={styles.moodEmoji}>😊</Text>
-                        <Text
-                          style={[
-                            styles.moodButtonText,
-                            mood === 1 && styles.moodButtonTextActive,
-                          ]}
-                        >
-                          Bien
-                        </Text>
-                      </Pressable>
-                      <Pressable
-                        style={[
-                          styles.moodButton,
-                          mood === 2 && styles.moodButtonActive,
-                        ]}
-                        onPress={() => handleSelectMood(2)}
-                      >
-                        <Text style={styles.moodEmoji}>😟</Text>
-                        <Text
-                          style={[
-                            styles.moodButtonText,
-                            mood === 2 && styles.moodButtonTextActive,
-                          ]}
-                        >
-                          Difficile
-                        </Text>
-                      </Pressable>
-                      <Pressable
-                        style={[
-                          styles.moodButton,
-                          mood === 3 && styles.moodButtonActiveDanger,
-                        ]}
-                        onPress={() => handleSelectMood(3)}
-                      >
-                        <Text style={styles.moodEmoji}>😰</Text>
-                        <Text
-                          style={[
-                            styles.moodButtonText,
-                            mood === 3 && styles.moodButtonTextActive,
-                          ]}
-                        >
-                          Urgence
-                        </Text>
-                      </Pressable>
-                    </View>
-                  </View>
-                </View>
-
-                <View
-                  style={[
-                    styles.bubbleRight,
-                    styles.bubbleRightDesktop,
-                  ]}
-                >
-                  {/* Carte rendez-vous (si lien dispo) */}
-                  {therapistBookingUrl && (
-                    <View style={styles.bookingCard}>
-                      <Text style={styles.bookingTitle}>Prendre rendez-vous</Text>
-                      <Text style={styles.bookingText}>
-                        Planifie une prochaine séance avec {therapistName || 'ton thérapeute'} quand tu en as besoin.
-                      </Text>
-                      <Pressable
-                        style={styles.bookingButton}
-                        onPress={() =>
-                          Linking.openURL(therapistBookingUrl)
-                        }
-                      >
-                        <Ionicons
-                          name="calendar-outline"
-                          size={18}
-                          color="#2563EB"
-                        />
-                        <Text style={styles.bookingButtonText}>
-                          Ouvrir le calendrier
-                        </Text>
-                      </Pressable>
-                    </View>
-                  )}
-
-                  {/* Exercices rapides */}
-                  <View style={styles.exercisesSection}>
-                    <Text style={styles.sectionTitle}>Exercices rapides</Text>
-                    <View style={styles.exerciseItem}>
-                      <View style={styles.exerciseIcon}>
-                        <Ionicons name="fitness" size={24} color="#2563EB" />
-                      </View>
-                      <View style={styles.exerciseContent}>
-                        <Text style={styles.exerciseTitle}>
-                          Respiration profonde
-                        </Text>
-                        <Text style={styles.exerciseText}>
-                          Inspire 4s, retiens 4s, expire 6s
-                        </Text>
-                      </View>
-                    </View>
-                    <View style={styles.exerciseItem}>
-                      <View style={styles.exerciseIcon}>
-                        <Ionicons name="walk" size={24} color="#2563EB" />
-                      </View>
-                      <View style={styles.exerciseContent}>
-                        <Text style={styles.exerciseTitle}>
-                          Marche de 5 minutes
-                        </Text>
-                        <Text style={styles.exerciseText}>
-                          Sors prendre l'air pour apaiser ton esprit
-                        </Text>
-                      </View>
-                    </View>
-                    <View style={styles.exerciseItem}>
-                      <View style={styles.exerciseIcon}>
-                        <Ionicons name="call" size={24} color="#2563EB" />
-                      </View>
-                      <View style={styles.exerciseContent}>
-                        <Text style={styles.exerciseTitle}>
-                          Contacter un proche
-                        </Text>
-                        <Text style={styles.exerciseText}>
-                          Parler peut vraiment aider à se sentir mieux
-                        </Text>
-                      </View>
-                    </View>
-                  </View>
-                </View>
-              </View>
-            )}
-
-            {activeTab === 'reports' && (
-              <View style={styles.reportsDesktopLayout}>
-                <View style={styles.reportsDesktopColumn}>
-                  <Text style={styles.reportsTitle}>
-                    Constats de mon thérapeute
-                  </Text>
-                  {reports.length === 0 ? (
-                    <View style={styles.emptyState}>
-                      <Ionicons
-                        name="document-text-outline"
-                        size={48}
-                        color="#CBD5E1"
-                      />
-                      <Text style={styles.emptyText}>
-                        Aucun constat pour le moment
-                      </Text>
-                      <Text style={styles.emptySubtext}>
-                        Ton thérapeute peut noter ses observations ici après
-                        vos séances
-                      </Text>
-                    </View>
-                  ) : (
-                    reports.map((report) => (
-                      <View key={report._id} style={styles.reportCard}>
-                        <View style={styles.reportHeader}>
-                          <View
-                            style={[
-                              styles.reportBadge,
-                              report.from === 'ai' && styles.reportBadgeAi,
-                            ]}
-                          >
-                            <Text style={styles.reportBadgeText}>
-                              {report.from === 'therapist' ? 'Thérapeute' : 'IA'}
-                            </Text>
-                          </View>
-                          <Text style={styles.reportDate}>
-                            {formatDateTime(report.date)}
-                          </Text>
-                        </View>
-                        <Text style={styles.reportContent}>
-                          {report.content}
-                        </Text>
-                      </View>
-                    ))
-                  )}
-                </View>
-
-                <View style={styles.reportsDesktopColumn}>
-                  <Text style={styles.reportsTitle}>Dernière synthèse IA</Text>
-                  {lastSummary ? (
-                    <View style={styles.summaryCard}>
-                      <View style={styles.summaryIcon}>
-                        <Ionicons
-                          name="sparkles"
-                          size={24}
-                          color="#2563EB"
-                        />
-                      </View>
-                      <Text style={styles.summaryText}>{lastSummary}</Text>
-                    </View>
-                  ) : (
-                    <View style={styles.emptyState}>
-                      <Ionicons
-                        name="sparkles-outline"
-                        size={48}
-                        color="#CBD5E1"
-                      />
-                      <Text style={styles.emptyText}>
-                        Aucune synthèse disponible
-                      </Text>
-                      <Text style={styles.emptySubtext}>
-                        L'IA créera une synthèse après tes échanges dans la
-                        bulle
-                      </Text>
-                    </View>
-                  )}
-                </View>
-              </View>
-            )}
-
-            {activeTab === 'booking' && (
-              <View style={styles.bookingSection}>
-                {therapistBookingUrl ? (
-                  <>
-                    <View style={styles.bookingHero}>
-                      <View style={styles.bookingHeroIcon}>
-                        <Ionicons
-                          name="calendar"
-                          size={28}
-                          color="#2563EB"
-                        />
-                      </View>
-                      <View style={styles.bookingHeroText}>
-                        <Text style={styles.bookingHeroTitle}>
-                          Prendre rendez-vous avec{' '}
-                          {therapistName || 'ton thérapeute'}
-                        </Text>
-                        <Text style={styles.bookingHeroSubtitle}>
-                          Choisis le créneau qui te convient le mieux, en toute
-                          autonomie.
-                        </Text>
-                      </View>
-                    </View>
-
-                    {Platform.OS === 'web' && InlineWidget ? (
-                      <View style={styles.calendlyContainer}>
-                        <InlineWidget url={therapistBookingUrl} styles={{ height: '650px' }} />
-                      </View>
-                    ) : (
-                      <View style={styles.bookingDesktopCard}>
-                        <Text style={styles.bookingDesktopTitle}>
-                          Calendrier en ligne
-                        </Text>
-                        <Text style={styles.bookingDesktopText}>
-                          Tu seras redirigé(e) vers Calendly pour confirmer ton
-                          rendez-vous avec {therapistName || 'ton thérapeute'}.
-                        </Text>
-                        <Pressable
-                          style={styles.bookingCtaButton}
-                          onPress={() =>
-                            Linking.openURL(therapistBookingUrl)
-                          }
-                        >
-                          <Ionicons
-                            name="calendar-outline"
-                            size={20}
-                            color="#FFFFFF"
-                          />
-                          <Text style={styles.bookingCtaButtonText}>
-                            Ouvrir Calendly
-                          </Text>
-                        </Pressable>
-                      </View>
-                    )}
-                  </>
-                ) : (
-                  <View style={styles.emptyState}>
-                    <Ionicons
-                      name="time-outline"
-                      size={48}
-                      color="#CBD5E1"
-                    />
-                    <Text style={styles.emptyText}>
-                      Prise de rendez-vous bientôt disponible
-                    </Text>
-                    <Text style={styles.emptySubtext}>
-                      Ton thérapeute n'a pas encore configuré la réservation en
-                      ligne. N'hésite pas à lui en parler en séance.
-                    </Text>
-                  </View>
-                )}
-              </View>
-            )}
-          </ScrollView>
-        ) : (
-          <ScrollView contentContainerStyle={styles.scrollContent}>
-            {activeTab === 'bubble' && (
-              <>
-                {/* Card IA Bulle */}
-                <View style={styles.aiCard}>
-                  <View style={styles.aiIllustration}>
-                    <Text style={styles.aiEmoji}>🤖</Text>
-                  </View>
-                  <Text style={styles.aiName}>Assistant IA</Text>
-                  <Text style={styles.aiSubtext}>
-                    Un espace sûr pour exprimer tes émotions, disponible 24/7
-                  </Text>
-                  <Pressable
-                    style={styles.bubbleButton}
-                    onPress={handleOpenChat}
-                  >
-                    <Text style={styles.bubbleButtonText}>
-                      Entrer dans ma bulle
-                    </Text>
-                    <Ionicons
-                      name="arrow-forward"
-                      size={20}
-                      color="#FFFFFF"
-                    />
-                  </Pressable>
-                </View>
-
-                {/* Comment te sens-tu ? */}
-                <View style={styles.moodSection}>
-                  <Text style={styles.sectionTitle}>Comment te sens-tu ?</Text>
-                  <View style={styles.moodButtons}>
-                    <Pressable
-                      style={[
-                        styles.moodButton,
-                        mood === 1 && styles.moodButtonActive,
-                      ]}
-                      onPress={() => handleSelectMood(1)}
-                    >
-                      <Text style={styles.moodEmoji}>😊</Text>
-                      <Text
-                        style={[
-                          styles.moodButtonText,
-                          mood === 1 && styles.moodButtonTextActive,
-                        ]}
-                      >
-                        Bien
-                      </Text>
-                    </Pressable>
-                    <Pressable
-                      style={[
-                        styles.moodButton,
-                        mood === 2 && styles.moodButtonActive,
-                      ]}
-                      onPress={() => handleSelectMood(2)}
-                    >
-                      <Text style={styles.moodEmoji}>😟</Text>
-                      <Text
-                        style={[
-                          styles.moodButtonText,
-                          mood === 2 && styles.moodButtonTextActive,
-                        ]}
-                      >
-                        Difficile
-                      </Text>
-                    </Pressable>
-                    <Pressable
-                      style={[
-                        styles.moodButton,
-                        mood === 3 && styles.moodButtonActiveDanger,
-                      ]}
-                      onPress={() => handleSelectMood(3)}
-                    >
-                      <Text style={styles.moodEmoji}>😰</Text>
-                      <Text
-                        style={[
-                          styles.moodButtonText,
-                          mood === 3 && styles.moodButtonTextActive,
-                        ]}
-                      >
-                        Urgence
-                      </Text>
-                    </Pressable>
-                  </View>
-                </View>
-
-                {/* Exercices rapides */}
-                <View style={styles.exercisesSection}>
-                  <Text style={styles.sectionTitle}>Exercices rapides</Text>
-                  <View style={styles.exerciseItem}>
-                    <View style={styles.exerciseIcon}>
-                      <Ionicons name="fitness" size={24} color="#2563EB" />
-                    </View>
-                    <View style={styles.exerciseContent}>
-                      <Text style={styles.exerciseTitle}>
-                        Respiration profonde
-                      </Text>
-                      <Text style={styles.exerciseText}>
-                        Inspire 4s, retiens 4s, expire 6s
-                      </Text>
-                    </View>
-                  </View>
-                  <View style={styles.exerciseItem}>
-                    <View style={styles.exerciseIcon}>
-                      <Ionicons name="walk" size={24} color="#2563EB" />
-                    </View>
-                    <View style={styles.exerciseContent}>
-                      <Text style={styles.exerciseTitle}>
-                        Marche de 5 minutes
-                      </Text>
-                      <Text style={styles.exerciseText}>
-                        Sors prendre l'air pour apaiser ton esprit
-                      </Text>
-                    </View>
-                  </View>
-                  <View style={styles.exerciseItem}>
-                    <View style={styles.exerciseIcon}>
-                      <Ionicons name="call" size={24} color="#2563EB" />
-                    </View>
-                    <View style={styles.exerciseContent}>
-                      <Text style={styles.exerciseTitle}>
-                        Contacter un proche
-                      </Text>
-                      <Text style={styles.exerciseText}>
-                        Parler peut vraiment aider à se sentir mieux
-                      </Text>
-                    </View>
-                  </View>
-                </View>
-              </>
-            )}
-
-            {activeTab === 'reports' && (
-              <>
-                {/* Toggle Synthèses */}
-                <View style={styles.reportsToggle}>
-                  <Pressable
-                    style={[
-                      styles.reportsToggleButton,
-                      reportsView === 'therapist' &&
-                        styles.reportsToggleButtonActive,
-                    ]}
-                    onPress={() => setReportsView('therapist')}
-                  >
-                    <Text
-                      style={[
-                        styles.reportsToggleText,
-                        reportsView === 'therapist' &&
-                          styles.reportsToggleTextActive,
-                      ]}
-                    >
-                      Thérapeute
-                    </Text>
-                  </Pressable>
-                  <Pressable
-                    style={[
-                      styles.reportsToggleButton,
-                      reportsView === 'last' &&
-                        styles.reportsToggleButtonActive,
-                    ]}
-                    onPress={() => setReportsView('last')}
-                  >
-                    <Text
-                      style={[
-                        styles.reportsToggleText,
-                        reportsView === 'last' &&
-                          styles.reportsToggleTextActive,
-                      ]}
-                    >
-                      Dernière synthèse
-                    </Text>
-                  </Pressable>
-                </View>
-
-                {/* Contenu synthèses */}
-                {reportsView === 'therapist' ? (
-                  <View style={styles.reportsContent}>
-                    <Text style={styles.reportsTitle}>
-                      Constats de mon thérapeute
-                    </Text>
-                    {reports.length === 0 ? (
-                      <View style={styles.emptyState}>
-                        <Ionicons
-                          name="document-text-outline"
-                          size={48}
-                          color="#CBD5E1"
-                        />
-                        <Text style={styles.emptyText}>
-                          Aucun constat pour le moment
-                        </Text>
-                        <Text style={styles.emptySubtext}>
-                          Ton thérapeute peut noter ses observations ici après
-                          vos séances
-                        </Text>
-                      </View>
-                    ) : (
-                      reports.map((report) => (
-                        <View key={report._id} style={styles.reportCard}>
-                          <View style={styles.reportHeader}>
-                            <View
-                              style={[
-                                styles.reportBadge,
-                                report.from === 'ai' &&
-                                  styles.reportBadgeAi,
-                              ]}
-                            >
-                              <Text style={styles.reportBadgeText}>
-                                {report.from === 'therapist'
-                                  ? 'Thérapeute'
-                                  : 'IA'}
-                              </Text>
-                            </View>
-                            <Text style={styles.reportDate}>
-                              {formatDateTime(report.date)}
-                            </Text>
-                          </View>
-                          <Text style={styles.reportContent}>
-                            {report.content}
-                          </Text>
-                        </View>
-                      ))
-                    )}
-                  </View>
-                ) : (
-                  <View style={styles.reportsContent}>
-                    <Text style={styles.reportsTitle}>
-                      Dernière synthèse IA
-                    </Text>
-                    {lastSummary ? (
-                      <View style={styles.summaryCard}>
-                        <View style={styles.summaryIcon}>
-                          <Ionicons
-                            name="sparkles"
-                            size={24}
-                            color="#2563EB"
-                          />
-                        </View>
-                        <Text style={styles.summaryText}>{lastSummary}</Text>
-                      </View>
-                    ) : (
-                      <View style={styles.emptyState}>
-                        <Ionicons
-                          name="sparkles-outline"
-                          size={48}
-                          color="#CBD5E1"
-                        />
-                        <Text style={styles.emptyText}>
-                          Aucune synthèse disponible
-                        </Text>
-                        <Text style={styles.emptySubtext}>
-                          L'IA créera une synthèse après tes échanges dans la
-                          bulle
-                        </Text>
-                      </View>
-                    )}
-                  </View>
-                )}
-              </>
-            )}
-
-            {activeTab === 'booking' && (
-              <View style={styles.bookingSection}>
-                {therapistBookingUrl ? (
-                  <>
-                    <View style={styles.bookingHero}>
-                      <View style={styles.bookingHeroIcon}>
-                        <Ionicons
-                          name="calendar"
-                          size={28}
-                          color="#2563EB"
-                        />
-                      </View>
-                      <View style={styles.bookingHeroText}>
-                        <Text style={styles.bookingHeroTitle}>
-                          Prendre rendez-vous avec{' '}
-                          {therapistName || 'ton thérapeute'}
-                        </Text>
-                        <Text style={styles.bookingHeroSubtitle}>
-                          Réserve facilement un créneau depuis ton téléphone.
-                        </Text>
-                      </View>
-                    </View>
-
-                    {Platform.OS === 'web' && InlineWidget ? (
-                      <View style={styles.calendlyContainer}>
-                        <InlineWidget url={therapistBookingUrl} styles={{ height: '650px' }} />
-                      </View>
-                    ) : (
-                      <View style={styles.bookingMobileCard}>
-                        <Text style={styles.bookingDesktopTitle}>
-                          Calendrier en ligne
-                        </Text>
-                        <Text style={styles.bookingDesktopText}>
-                          Tu seras redirigé(e) vers Calendly pour confirmer ton
-                          rendez-vous avec {therapistName || 'ton thérapeute'}.
-                        </Text>
-                        <Pressable
-                          style={styles.bookingCtaButton}
-                          onPress={() =>
-                            Linking.openURL(therapistBookingUrl)
-                          }
-                        >
-                          <Ionicons
-                            name="calendar-outline"
-                            size={20}
-                            color="#FFFFFF"
-                          />
-                          <Text style={styles.bookingCtaButtonText}>
-                            Ouvrir Calendly
-                          </Text>
-                        </Pressable>
-                      </View>
-                    )}
-                  </>
-                ) : (
-                  <View style={styles.emptyState}>
-                    <Ionicons
-                      name="time-outline"
-                      size={48}
-                      color="#CBD5E1"
-                    />
-                    <Text style={styles.emptyText}>
-                      Prise de rendez-vous bientôt disponible
-                    </Text>
-                    <Text style={styles.emptySubtext}>
-                      Ton thérapeute n'a pas encore configuré la réservation en
-                      ligne. N'hésite pas à lui en parler en séance.
-                    </Text>
-                  </View>
-                )}
-              </View>
-            )}
-          </ScrollView>
-        )}
-
-        {/* Bottom Tab Menu (mobile uniquement) */}
-        {!isDesktop && (
-          <View style={styles.bottomTab}>
-            <Pressable
-              style={[
-                styles.tabButton,
-                activeTab === 'bubble' && styles.tabButtonActive,
-              ]}
-              onPress={() => setActiveTab('bubble')}
-            >
-              <Ionicons
-                name={
-                  activeTab === 'bubble'
-                    ? 'chatbubbles'
-                    : 'chatbubbles-outline'
-                }
-                size={24}
-                color={activeTab === 'bubble' ? '#2563EB' : '#64748B'}
-              />
-              <Text
-                style={[
-                  styles.tabText,
-                  activeTab === 'bubble' && styles.tabTextActive,
-                ]}
-              >
-                Bulle
-              </Text>
-            </Pressable>
-
-            <Pressable
-              style={[
-                styles.tabButton,
-                activeTab === 'reports' && styles.tabButtonActive,
-              ]}
-              onPress={() => setActiveTab('reports')}
-            >
-              <Ionicons
-                name={
-                  activeTab === 'reports' ? 'reader' : 'reader-outline'
-                }
-                size={24}
-                color={activeTab === 'reports' ? '#2563EB' : '#64748B'}
-              />
-              <Text
-                style={[
-                  styles.tabText,
-                  activeTab === 'reports' && styles.tabTextActive,
-                ]}
-              >
-                Synthèses
-              </Text>
-            </Pressable>
-
-            <Pressable
-              style={[
-                styles.tabButton,
-                activeTab === 'booking' && styles.tabButtonActive,
-              ]}
-              onPress={() => setActiveTab('booking')}
-            >
-              <Ionicons
-                name={
-                  activeTab === 'booking'
-                    ? 'calendar'
-                    : 'calendar-outline'
-                }
-                size={24}
-                color={activeTab === 'booking' ? '#2563EB' : '#64748B'}
-              />
-              <Text
-                style={[
-                  styles.tabText,
-                  activeTab === 'booking' && styles.tabTextActive,
-                ]}
-              >
-                Rendez-vous
-              </Text>
-            </Pressable>
-          </View>
-        )}
-      </View>
-    </>
+      }
+      bottomContent={<BottomTabBar tabs={BOTTOM_TABS} activeKey={activeTab} onChange={setActiveTab} />}
+    >
+      {renderContent()}
+    </PageLayout>
   );
 }
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#FFFFFF',
-  },
-  containerDesktop: {
-    alignItems: 'center',
-  },
-  safeArea: {
-    paddingTop: Platform.OS === 'android' ? 25 : 0,
-  },
-  center: {
-    justifyContent: 'center',
-    alignItems: 'center',
-    padding: 20,
-  },
-  loadingText: {
-    fontSize: 16,
-    color: '#64748B',
-  },
-  scrollContent: {
-    padding: 20,
-    paddingBottom: 100, // Pour le bottom tab
-  },
-  scrollContentDesktop: {
-    maxWidth: 960,
-    width: '100%',
-    alignSelf: 'center',
-    paddingBottom: 32,
-  },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: '#F1F5F9',
-  },
-  headerDesktop: {
-    maxWidth: 960,
-    width: '100%',
-  },
-  headerLeft: {
-    flex: 1,
-  },
-  titleText: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: '#1E293B',
-  },
-  greeting: {
-    marginTop: 4,
-    fontSize: 15,
-    color: '#64748B',
-  },
-  logoutText: {
-    fontSize: 14,
-    color: '#64748B',
-    fontWeight: '500',
-  },
-  menuButton: {
-    padding: 4,
-  },
-  menuCard: {
-    backgroundColor: '#FFFFFF',
-    marginHorizontal: 20,
-    marginTop: 8,
-    borderRadius: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
-  },
-  menuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    padding: 16,
-  },
-  menuItemTextDanger: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#EF4444',
-  },
+const s = StyleSheet.create({
+  center: { justifyContent: 'center', alignItems: 'center', padding: spacing.xl },
+  signOutBtn: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.sm, paddingHorizontal: spacing.lg, borderRadius: radius.full, backgroundColor: colors.bgSecondary },
+  mobileLogoutBtn: { width: 40, height: 40, borderRadius: radius.full, backgroundColor: colors.errorLight, alignItems: 'center', justifyContent: 'center' },
+  tabContent: { gap: spacing['2xl'] },
+  cardList: { gap: spacing.md },
 
-  // Onglets desktop (Bulle / Synthèses)
-  desktopTabs: {
-    maxWidth: 960,
-    width: '100%',
-    alignSelf: 'center',
-  },
-  
-  // Card IA Bulle
-  aiCard: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 24,
-    padding: 24,
-    alignItems: 'center',
-    marginBottom: 24,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
-  },
-  aiIllustration: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: '#E0E7FF',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 16,
-  },
-  aiEmoji: {
-    fontSize: 48,
-  },
-  aiName: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#1E293B',
-    marginBottom: 8,
-  },
-  aiSubtext: {
-    fontSize: 14,
-    color: '#64748B',
-    textAlign: 'center',
-    marginBottom: 20,
-    lineHeight: 20,
-  },
-  // Layout desktop pour l'onglet Bulle
-  bubbleLayout: {
-    flexDirection: 'column',
-    gap: 24,
-  },
-  bubbleLayoutDesktop: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 24,
-  },
-  bubbleLeft: {
-  },
-  bubbleRight: {
-  },
-  bubbleLeftDesktop: {
-    flex: 3,
-  },
-  bubbleRightDesktop: {
-    flex: 2,
-  },
-  bubbleButton: {
-    backgroundColor: '#1E293B',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 24,
-    borderRadius: 16,
-    gap: 8,
-    width: '100%',
-  },
-  bubbleButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  
-  // Mood Section
-  moodSection: {
-    marginBottom: 24,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#1E293B',
-    marginBottom: 16,
-  },
-  moodButtons: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  moodButton: {
-    flex: 1,
-    backgroundColor: '#F8FAFC',
-    borderRadius: 16,
-    padding: 16,
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#E2E8F0',
-  },
-  moodButtonActive: {
-    backgroundColor: '#EFF6FF',
-    borderColor: '#2563EB',
-  },
-  moodButtonActiveDanger: {
-    backgroundColor: '#FEF2F2',
-    borderColor: '#EF4444',
-  },
-  moodEmoji: {
-    fontSize: 32,
-    marginBottom: 8,
-  },
-  moodButtonText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#64748B',
-  },
-  moodButtonTextActive: {
-    color: '#2563EB',
-  },
-  
-  // Exercices
-  exercisesSection: {
-    marginBottom: 24,
-  },
-  bookingCard: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 16,
-    gap: 8,
-  },
-  bookingTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#1E293B',
-  },
-  bookingText: {
-    fontSize: 13,
-    color: '#64748B',
-    lineHeight: 18,
-  },
-  bookingButton: {
-    marginTop: 4,
-    alignSelf: 'flex-start',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    borderRadius: 999,
-    backgroundColor: '#EFF6FF',
-  },
-  bookingButtonText: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: '#2563EB',
-  },
-  exerciseItem: {
-    flexDirection: 'row',
-    backgroundColor: '#F8FAFC',
-    borderRadius: 16,
-    padding: 16,
-    marginBottom: 12,
-    gap: 12,
-  },
-  exerciseIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#EFF6FF',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  exerciseContent: {
-    flex: 1,
-  },
-  exerciseTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#1E293B',
-    marginBottom: 4,
-  },
-  exerciseText: {
-    fontSize: 13,
-    color: '#64748B',
-    lineHeight: 18,
-  },
-  
-  // Synthèses Toggle
-  reportsToggle: {
-    flexDirection: 'row',
-    backgroundColor: '#F1F5F9',
-    borderRadius: 12,
-    padding: 4,
-    marginBottom: 24,
-  },
-  reportsToggleButton: {
-    flex: 1,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  reportsToggleButtonActive: {
-    backgroundColor: '#FFFFFF',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
-    shadowRadius: 2,
-    elevation: 1,
-  },
-  reportsToggleText: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#64748B',
-  },
-  reportsToggleTextActive: {
-    color: '#2563EB',
-  },
-  
-  // Reports Content
-  reportsContent: {
-    gap: 16,
-  },
-  reportsDesktopLayout: {
-    flexDirection: 'row',
-    gap: 24,
-    alignItems: 'flex-start',
-  },
-  reportsDesktopColumn: {
-    flex: 1,
-  },
+  // Desktop layout
+  desktopRoot: { flex: 1, flexDirection: 'row', backgroundColor: colors.bgDesktop },
+  desktopSidebar: { width: 280, backgroundColor: colors.bg, borderRightWidth: 1, borderRightColor: colors.borderLight, paddingVertical: spacing['2xl'], justifyContent: 'space-between' },
+  sidebarHeader: { paddingHorizontal: spacing['2xl'], marginBottom: spacing['2xl'] },
+  sidebarLogoRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
+  sidebarLogo: { width: 36, height: 36 },
+  sidebarTitle: { fontSize: 22, fontWeight: '800', letterSpacing: -0.5 },
+  sidebarNav: { flex: 1, gap: spacing.xs, paddingHorizontal: spacing.md },
+  navItem: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md, paddingVertical: spacing.md, paddingHorizontal: spacing.lg, borderRadius: radius.lg },
+  navItemActive: { backgroundColor: colors.primaryLight },
+  navLabel: { ...font.bodyMedium, color: colors.textSecondary },
+  navLabelActive: { color: colors.primary, fontWeight: '700' },
+  navDesc: { ...font.caption, fontSize: 11, marginTop: 1 },
+  sidebarFooter: { paddingHorizontal: spacing['2xl'], paddingTop: spacing.lg, borderTopWidth: 1, borderTopColor: colors.borderLight },
+  sidebarSignOut: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.md },
+  desktopMain: { flex: 1 },
+  desktopContentHeader: { paddingHorizontal: spacing['3xl'], paddingTop: spacing['2xl'], paddingBottom: spacing.lg, borderBottomWidth: 1, borderBottomColor: colors.borderLight, backgroundColor: colors.bg },
+  desktopScroll: { padding: spacing['3xl'], gap: spacing['2xl'] },
 
-  // Booking (Rendez-vous)
-  bookingSection: {
-    gap: 24,
-  },
-  calendlyContainer: {
-    borderRadius: 20,
-    overflow: 'hidden',
-    backgroundColor: '#FFFFFF',
-  },
-  bookingHero: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
-    padding: 20,
-    borderRadius: 20,
-    backgroundColor: '#EFF6FF',
-  },
-  bookingHeroIcon: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: '#DBEAFE',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  bookingHeroText: {
-    flex: 1,
-  },
-  bookingHeroTitle: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: '#1E293B',
-    marginBottom: 4,
-  },
-  bookingHeroSubtitle: {
-    fontSize: 14,
-    color: '#64748B',
-    lineHeight: 20,
-  },
-  bookingDesktopCard: {
-    backgroundColor: '#0F172A',
-    borderRadius: 24,
-    padding: 24,
-    gap: 16,
-  },
-  bookingMobileCard: {
-    backgroundColor: '#0F172A',
-    borderRadius: 24,
-    padding: 20,
-    gap: 14,
-  },
-  bookingDesktopTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#E5E7EB',
-  },
-  bookingDesktopText: {
-    fontSize: 14,
-    color: '#CBD5F5',
-    lineHeight: 20,
-  },
-  bookingCtaButton: {
-    marginTop: 4,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    borderRadius: 999,
-    backgroundColor: '#2563EB',
-  },
-  bookingCtaButtonText: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  reportsTitle: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#1E293B',
-    marginBottom: 8,
-  },
-  reportCard: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 16,
-    padding: 16,
-    gap: 12,
-  },
-  reportHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  reportBadge: {
-    backgroundColor: '#EFF6FF',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 8,
-  },
-  reportBadgeAi: {
-    backgroundColor: '#F5F3FF',
-  },
-  reportBadgeText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#2563EB',
-  },
-  reportDate: {
-    fontSize: 12,
-    color: '#94A3B8',
-  },
-  reportContent: {
-    fontSize: 14,
-    color: '#475569',
-    lineHeight: 20,
-  },
-  
-  // Summary Card
-  summaryCard: {
-    backgroundColor: '#F8FAFC',
-    borderRadius: 16,
-    padding: 20,
-    gap: 12,
-  },
-  summaryIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: '#EFF6FF',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  summaryText: {
-    fontSize: 14,
-    color: '#475569',
-    lineHeight: 22,
-  },
-  
-  // Empty State
-  emptyState: {
-    alignItems: 'center',
-    paddingVertical: 40,
-    paddingHorizontal: 20,
-  },
-  emptyText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#64748B',
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  emptySubtext: {
-    fontSize: 14,
-    color: '#94A3B8',
-    textAlign: 'center',
-    lineHeight: 20,
-  },
-  
-  // Bottom Tab
-  bottomTab: {
-    flexDirection: 'row',
-    backgroundColor: '#FFFFFF',
-    borderTopWidth: 1,
-    borderTopColor: '#F1F5F9',
-    paddingVertical: 12,
-    paddingHorizontal: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: -2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 10,
-  },
-  bottomTabDesktop: {
-    maxWidth: 960,
-    width: '100%',
-    alignSelf: 'center',
-    left: 'auto',
-    right: 'auto',
-  },
-  tabButton: {
-    flex: 1,
-    alignItems: 'center',
-    gap: 4,
-  },
-  tabButtonActive: {
-  },
-  tabText: {
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#64748B',
-  },
-  tabTextActive: {
-    color: '#2563EB',
-  },
-  
-  // Error
-  errorCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    padding: 24,
-    alignItems: 'center',
-    maxWidth: 350,
-    width: '100%',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 5,
-  },
-  errorTitle: {
-    fontSize: 20,
-    fontWeight: '700',
-    color: '#EF4444',
-    marginBottom: 8,
-  },
-  errorText: {
-    fontSize: 14,
-    color: '#64748B',
-    textAlign: 'center',
-    marginBottom: 16,
-  },
+  // Mobile description
+  mobileDesc: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: layout.pagePadding, paddingVertical: spacing.sm, backgroundColor: colors.primaryLight, marginHorizontal: spacing.md, borderRadius: radius.md, marginBottom: spacing.sm },
+
+  // Hero
+  heroCard: { backgroundColor: colors.bg, borderRadius: radius['2xl'], padding: spacing['3xl'], alignItems: 'center', gap: spacing.lg, borderWidth: 1, borderColor: colors.primaryMedium, overflow: 'hidden', ...shadows.lg },
+  heroGlow: { position: 'absolute', top: -60, width: 200, height: 200, borderRadius: 100, backgroundColor: colors.primaryLight, opacity: 0.6 },
+  heroAvatar: { width: 88, height: 88, borderRadius: 44, backgroundColor: colors.primaryLight, justifyContent: 'center', alignItems: 'center' },
+  heroTitle: { ...font.subtitle },
+  heroDesc: { ...font.bodySmall, textAlign: 'center', maxWidth: 280 },
+
+  // Exercises
+  exerciseRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: spacing.sm },
+  exerciseIcon: { width: 44, height: 44, borderRadius: radius.md, justifyContent: 'center', alignItems: 'center' },
+
+  // Journal
+  journalInput: { backgroundColor: colors.bgTertiary, borderRadius: radius.md, padding: spacing.lg, fontSize: 15, color: colors.text, borderWidth: 1, borderColor: colors.border, minHeight: 100 },
+  moodChipRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flexWrap: 'wrap' },
+  moodChip: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, paddingHorizontal: spacing.md, paddingVertical: spacing.xs + 1, borderRadius: radius.full, backgroundColor: colors.bgTertiary, borderWidth: 1, borderColor: colors.border },
+  moodChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  moodChipLabel: { ...font.caption, color: colors.textSecondary },
+  journalEntryHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  journalMoodBadge: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+
+  // Reports sub-tabs
+  subTabRow: { flexDirection: 'row', gap: spacing.sm },
+  subTab: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, paddingVertical: spacing.md, borderRadius: radius.lg, backgroundColor: colors.bgSecondary, borderWidth: 1.5, borderColor: colors.borderLight },
+  subTabActive: { backgroundColor: colors.primaryLight, borderColor: colors.primaryMedium },
+  subTabText: { ...font.bodySmall, fontWeight: '600', color: colors.textTertiary },
+  subTabTextActive: { color: colors.primary },
+  subTabBadge: { backgroundColor: colors.primaryLight, paddingHorizontal: spacing.sm, paddingVertical: 1, borderRadius: radius.full, minWidth: 22, alignItems: 'center' },
+  subTabBadgeText: { fontSize: 11, fontWeight: '700', color: colors.primary },
+  sectionHint: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, paddingHorizontal: spacing.md, paddingVertical: spacing.md, backgroundColor: colors.bgSecondary, borderRadius: radius.md },
+
+  // Calendly
+  calendlyWrap: { borderRadius: radius.xl, overflow: 'hidden', backgroundColor: colors.bg, ...shadows.md },
 });

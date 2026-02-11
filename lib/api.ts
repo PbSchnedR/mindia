@@ -516,6 +516,63 @@ export const api = {
       return { session: { ...sessions[0], summary, keywords } };
     },
   },
+
+  // ==================== JOURNALING ====================
+  journal: {
+    get: async (userId: string) => {
+      const res = await fetchJson(`/users/${userId}/journal`);
+      return { entries: res.data?.entries || [] };
+    },
+    add: async (userId: string, entry: { text: string; mood?: number; tags?: string[]; crisisLevel?: number }) => {
+      const res = await fetchJson(`/users/${userId}/journal`, {
+        method: 'POST',
+        body: JSON.stringify(entry),
+      });
+      return { entry: res.data?.entry };
+    },
+    delete: async (userId: string, entryId: string) => {
+      return fetchJson(`/users/${userId}/journal/${entryId}`, { method: 'DELETE' });
+    },
+  },
+
+  // ==================== CRISIS EVALUATIONS ====================
+  crisisEval: {
+    get: async (userId: string) => {
+      const res = await fetchJson(`/users/${userId}/crisis-eval`);
+      return { evaluations: res.data?.evaluations || [] };
+    },
+    add: async (userId: string, data: { level: number; summary?: string; conversationId?: string }) => {
+      const res = await fetchJson(`/users/${userId}/crisis-eval`, {
+        method: 'POST',
+        body: JSON.stringify(data),
+      });
+      return { evaluation: res.data?.evaluation };
+    },
+  },
+
+  // ==================== RECOMMENDED ACTIONS ====================
+  actions: {
+    get: async (userId: string) => {
+      const res = await fetchJson(`/users/${userId}/actions`);
+      return { actions: res.data?.actions || [] };
+    },
+    set: async (userId: string, actions: any[]) => {
+      return fetchJson(`/users/${userId}/actions`, {
+        method: 'PUT',
+        body: JSON.stringify({ actions }),
+      });
+    },
+  },
+
+  // ==================== DATA CONSENT ====================
+  consent: {
+    accept: async (userId: string, version?: string) => {
+      return fetchJson(`/users/${userId}/consent`, {
+        method: 'POST',
+        body: JSON.stringify({ version: version || '1.0' }),
+      });
+    },
+  },
 };
 
 export default api;
