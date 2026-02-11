@@ -71,28 +71,34 @@ export default function TherapistSettingsScreen() {
         </View>
       </SectionCard>
 
-      {/* Booking */}
-      <SectionCard title="Prise de rendez-vous" icon="calendar-outline" variant="elevated">
-        <Text style={font.bodySmall}>Ajoutez votre lien Calendly, Doctolib ou autre pour permettre à vos patients de prendre rendez-vous directement depuis l'application.</Text>
-        <TextField label="URL de réservation" placeholder="https://calendly.com/votre-lien" value={bookingUrl} onChangeText={setBookingUrl} autoCapitalize="none" keyboardType="url" icon="link-outline" />
-        <Button title="Enregistrer" icon="checkmark" onPress={handleSaveBookingUrl} loading={saving} size="sm" />
-      </SectionCard>
+      {/* Grid: 2 cols on desktop */}
+      <View style={isDesktop ? s.settingsGrid : s.settingsStack}>
+        <SectionCard title="Prise de rendez-vous" icon="calendar-outline" variant="elevated" style={isDesktop ? { flex: 1 } : undefined}>
+          <Text style={font.bodySmall}>Ajoutez votre lien Calendly, Doctolib ou autre pour permettre a vos patients de prendre rendez-vous directement.</Text>
+          <TextField label="URL de reservation" placeholder="https://calendly.com/votre-lien" value={bookingUrl} onChangeText={setBookingUrl} autoCapitalize="none" keyboardType="url" icon="link-outline" />
+          <Button title="Enregistrer" icon="checkmark" onPress={handleSaveBookingUrl} loading={saving} size="sm" />
+        </SectionCard>
 
-      {/* Notifications */}
-      <SectionCard title="Notifications" icon="notifications-outline" variant="elevated">
-        <View style={s.comingSoonRow}>
-          <View style={s.comingSoonBadge}><Text style={s.comingSoonText}>Prochainement</Text></View>
-          <Text style={[font.bodySmall, { flex: 1 }]}>Configurez vos alertes en cas de situation de crise d'un patient.</Text>
-        </View>
-      </SectionCard>
+        <SectionCard title="Notifications" icon="notifications-outline" variant="elevated" style={isDesktop ? { flex: 1 } : undefined}>
+          <View style={s.comingSoonRow}><View style={s.comingSoonBadge}><Text style={s.comingSoonText}>Prochainement</Text></View></View>
+          <Text style={font.bodySmall}>Configurez vos alertes en cas de situation de crise d'un patient.</Text>
+          <View style={s.comingSoonFeatures}>
+            <View style={s.featureItem}><Ionicons name="notifications" size={16} color={colors.warning} /><Text style={font.caption}>Alertes urgence</Text></View>
+            <View style={s.featureItem}><Ionicons name="mail" size={16} color={colors.primary} /><Text style={font.caption}>Notifications email</Text></View>
+          </View>
+        </SectionCard>
+      </View>
 
-      {/* Security */}
-      <SectionCard title="Sécurité & Confidentialité" icon="shield-outline" variant="elevated">
-        <View style={s.comingSoonRow}>
-          <View style={s.comingSoonBadge}><Text style={s.comingSoonText}>Prochainement</Text></View>
-          <Text style={[font.bodySmall, { flex: 1 }]}>Chiffrement des données, gestion des accès, export des données patient.</Text>
-        </View>
-      </SectionCard>
+      <View style={isDesktop ? { maxWidth: '50%' } : undefined}>
+        <SectionCard title="Securite & Confidentialite" icon="shield-outline" variant="elevated">
+          <View style={s.comingSoonRow}><View style={s.comingSoonBadge}><Text style={s.comingSoonText}>Prochainement</Text></View></View>
+          <Text style={font.bodySmall}>Chiffrement des donnees, gestion des acces, export des donnees patient.</Text>
+          <View style={s.comingSoonFeatures}>
+            <View style={s.featureItem}><Ionicons name="lock-closed" size={16} color={colors.success} /><Text style={font.caption}>Chiffrement E2E</Text></View>
+            <View style={s.featureItem}><Ionicons name="download" size={16} color={colors.primary} /><Text style={font.caption}>Export RGPD</Text></View>
+          </View>
+        </SectionCard>
+      </View>
     </View>
   );
 
@@ -166,6 +172,10 @@ const s = StyleSheet.create({
   comingSoonRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md },
   comingSoonBadge: { backgroundColor: colors.warningLight, paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: radius.full },
   comingSoonText: { ...font.caption, color: colors.warning, fontWeight: '600' },
+  comingSoonFeatures: { gap: spacing.sm, marginTop: spacing.sm },
+  featureItem: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  settingsGrid: { flexDirection: 'row', gap: spacing.xl },
+  settingsStack: { gap: spacing.xl },
   mobileHeaderActions: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   mobileNavBtn: { width: 40, height: 40, borderRadius: radius.full, backgroundColor: colors.primaryLight, alignItems: 'center', justifyContent: 'center' },
   mobileLogoutBtn: { width: 40, height: 40, borderRadius: radius.full, backgroundColor: colors.errorLight, alignItems: 'center', justifyContent: 'center' },

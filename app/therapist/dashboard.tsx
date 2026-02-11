@@ -20,14 +20,14 @@ import { colors, spacing, radius, shadows, font, layout } from '@/constants/toke
 
 type PatientRow = Patient & { lastSeverity?: number; lastSummary?: string; lastDate?: string };
 
-const getMoodData = (actualMood?: string | null, severity?: number) => {
+const getMoodData = (actualMood?: string | null, severity?: number): { icon: 'happy' | 'sad' | 'warning' | 'ellipse'; color: string; label: string; bg: string } => {
   let value: number | undefined;
   if (actualMood) { const p = parseInt(String(actualMood), 10); if (p >= 1 && p <= 3) value = p; }
   if (!value && typeof severity === 'number') value = severity;
-  if (value === 1) return { emoji: '😊', color: colors.success, label: 'Bien', bg: colors.successLight };
-  if (value === 2) return { emoji: '😟', color: colors.warning, label: 'Difficile', bg: colors.warningLight };
-  if (value === 3) return { emoji: '😰', color: colors.error, label: 'Urgence', bg: colors.errorLight };
-  return { emoji: '😐', color: colors.textTertiary, label: 'Non renseigné', bg: colors.bgTertiary };
+  if (value === 1) return { icon: 'happy', color: colors.success, label: 'Bien', bg: colors.successLight };
+  if (value === 2) return { icon: 'sad', color: colors.warning, label: 'Difficile', bg: colors.warningLight };
+  if (value === 3) return { icon: 'warning', color: colors.error, label: 'Urgence', bg: colors.errorLight };
+  return { icon: 'ellipse', color: colors.textTertiary, label: 'Non renseigne', bg: colors.bgTertiary };
 };
 
 export default function TherapistDashboardScreen() {
@@ -117,7 +117,7 @@ export default function TherapistDashboardScreen() {
     return (
       <Pressable onPress={() => router.push(`/therapist/patient/${item.id}`)} style={({ pressed }) => [s.patientCard, isDesktop && s.patientCardDesktop, pressed && s.patientCardPressed]}>
         <View style={s.patientRow}>
-          <View style={[s.patientAvatar, { backgroundColor: mood.bg }]}><Text style={{ fontSize: 22 }}>{mood.emoji}</Text></View>
+          <View style={[s.patientAvatar, { backgroundColor: mood.bg }]}><Ionicons name={mood.icon} size={22} color={mood.color} /></View>
           <View style={{ flex: 1, gap: 2 }}>
             <Text style={s.patientName}>{item.firstName} {item.lastName}</Text>
             <Text style={font.caption}>{item.therapyTopic ?? 'Sujet non renseigné'} · {item.sessionsDone ?? 0} séances</Text>

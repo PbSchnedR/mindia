@@ -303,7 +303,9 @@ export default function PatientChatScreen() {
             {messages.length === 0 && !loading && (
               <View style={s.introContainer}>
                 <View style={s.introCard}>
-                  <Text style={{ fontSize: 44, textAlign: 'center' }}>🫧</Text>
+                  <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: colors.primaryLight, alignItems: 'center', justifyContent: 'center' }}>
+                    <Ionicons name="chatbubbles" size={32} color={colors.primary} />
+                  </View>
                   <Text style={[font.subtitle, { textAlign: 'center' }]}>Bienvenue dans ta bulle</Text>
                   <Text style={[font.bodySmall, { textAlign: 'center', maxWidth: 320 }]}>
                     Cet espace est le tien. Comment veux-tu commencer ?

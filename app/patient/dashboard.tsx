@@ -1,7 +1,7 @@
 import { useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  StyleSheet, View, Pressable, Linking, Text, Alert, Platform, TextInput, ScrollView,
+  StyleSheet, View, Pressable, Linking, Text, Alert, Platform, TextInput, ScrollView, Animated,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
@@ -24,12 +24,8 @@ import { getTherapistById } from '@/lib/people';
 import type { Severity } from '@/lib/types';
 import { colors, spacing, radius, shadows, font, layout } from '@/constants/tokens';
 
-// Calendly (web only)
 let InlineWidget: any | null = null;
-if (Platform.OS === 'web') {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  InlineWidget = require('react-calendly').InlineWidget;
-}
+if (Platform.OS === 'web') { InlineWidget = require('react-calendly').InlineWidget; }
 
 interface Report { _id: string; date: string; content: string; from: 'therapist' | 'ai'; }
 
@@ -39,12 +35,19 @@ const BOTTOM_TABS: TabItem[] = [
   { key: 'reports', label: 'Constats', icon: 'reader-outline', iconActive: 'reader' },
   { key: 'booking', label: 'RDV', icon: 'calendar-outline', iconActive: 'calendar' },
 ];
-
 const DESKTOP_NAV = [
-  { key: 'bubble', label: 'Ma Bulle', icon: 'chatbubbles-outline' as const, iconActive: 'chatbubbles' as const, desc: 'Parler à ton assistant IA' },
-  { key: 'journal', label: 'Journal', icon: 'book-outline' as const, iconActive: 'book' as const, desc: 'Écrire ton ressenti au quotidien' },
-  { key: 'reports', label: 'Constats', icon: 'reader-outline' as const, iconActive: 'reader' as const, desc: 'Observations de ton thérapeute' },
+  { key: 'bubble', label: 'Ma Bulle', icon: 'chatbubbles-outline' as const, iconActive: 'chatbubbles' as const, desc: 'Parler a ton assistant IA' },
+  { key: 'journal', label: 'Journal', icon: 'book-outline' as const, iconActive: 'book' as const, desc: 'Ecrire ton ressenti au quotidien' },
+  { key: 'reports', label: 'Constats', icon: 'reader-outline' as const, iconActive: 'reader' as const, desc: 'Observations de ton therapeute' },
   { key: 'booking', label: 'Rendez-vous', icon: 'calendar-outline' as const, iconActive: 'calendar' as const, desc: 'Prendre RDV en ligne' },
+];
+
+const JOURNAL_MOODS: { value: number; icon: keyof typeof Ionicons.glyphMap; label: string; color: string }[] = [
+  { value: 1, icon: 'thunderstorm-outline', label: 'Tres mal', color: colors.error },
+  { value: 2, icon: 'rainy-outline', label: 'Mal', color: colors.warning },
+  { value: 3, icon: 'cloudy-outline', label: 'Moyen', color: colors.textTertiary },
+  { value: 4, icon: 'partly-sunny-outline', label: 'Bien', color: colors.success },
+  { value: 5, icon: 'sunny-outline', label: 'Tres bien', color: '#F59E0B' },
 ];
 
 export default function PatientDashboardScreen() {
@@ -62,406 +65,274 @@ export default function PatientDashboardScreen() {
   const [error, setError] = useState<string | null>(null);
   const [therapistName, setTherapistName] = useState('');
   const [therapistBookingUrl, setTherapistBookingUrl] = useState<string | null>(null);
-
   const [activeTab, setActiveTab] = useState<string>('bubble');
-  // (no dropdown menu on mobile – direct buttons instead)
-
-  // Journaling
   const [journalEntries, setJournalEntries] = useState<any[]>([]);
   const [newJournalText, setNewJournalText] = useState('');
   const [newJournalMood, setNewJournalMood] = useState(3);
   const [savingJournal, setSavingJournal] = useState(false);
-
-  // Reports sub-tab: 'therapist' or 'ai'
   const [reportsSub, setReportsSub] = useState<'therapist' | 'ai'>('therapist');
+
+  // Bubble animation
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 1.08, duration: 2000, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1, duration: 2000, useNativeDriver: true }),
+      ])
+    ).start();
+  }, []);
 
   useEffect(() => {
     if (sessionLoading) return;
-    if (!session || session.role !== 'patient') {
-      if (!hasRedirected.current) {
-        hasRedirected.current = true;
-        router.replace('/');
-      }
-      return;
-    }
+    if (!session || session.role !== 'patient') { if (!hasRedirected.current) { hasRedirected.current = true; router.replace('/'); } return; }
     loadData();
   }, [session, sessionLoading]);
 
   const loadData = async () => {
     if (!session || session.role !== 'patient') return;
     const patientId = session.patientId;
-    setLoading(true);
-    setError(null);
+    setLoading(true); setError(null);
     try {
       const { user } = await api.users.getById(patientId);
       setPatientName(user.username || '');
-
-      if (session.therapistId) {
-        try {
-          const t = await getTherapistById(session.therapistId);
-          if (t) {
-            setTherapistName(`${t.firstName} ${t.lastName}`.trim());
-            if (t.bookingUrl) setTherapistBookingUrl(t.bookingUrl);
-          }
-        } catch { /* silent */ }
-      }
-
+      if (session.therapistId) { try { const t = await getTherapistById(session.therapistId); if (t) { setTherapistName(`${t.firstName} ${t.lastName}`.trim()); if (t.bookingUrl) setTherapistBookingUrl(t.bookingUrl); } } catch {} }
       let moodFromUser: Severity | undefined;
-      if (user.actual_mood) {
-        const p = parseInt(String(user.actual_mood), 10);
-        if (p === 1 || p === 2 || p === 3) { moodFromUser = p as Severity; setMood(moodFromUser); }
-      }
-
+      if (user.actual_mood) { const p = parseInt(String(user.actual_mood), 10); if (p === 1 || p === 2 || p === 3) { moodFromUser = p as Severity; setMood(moodFromUser); } }
       const { reports: reps } = await api.reports.get(patientId);
       setReports(reps || []);
-
       const { messages } = await api.messages.get(patientId);
       const aiMsgs = messages.filter((m: any) => m.from === 'ai');
       if (aiMsgs.length > 0) setLastSummary(aiMsgs[aiMsgs.length - 1].text);
-
-      try {
-        const { entries } = await api.journal.get(patientId);
-        setJournalEntries(entries || []);
-      } catch { /* silent */ }
-
+      try { const { entries } = await api.journal.get(patientId); setJournalEntries(entries || []); } catch {}
       const sessions = await listChatSessionsForPatient(patientId);
-      if (sessions.length > 0) {
-        setChatSessionId(sessions[0].id);
-        if (!moodFromUser) setMood(sessions[0].severity);
-      } else {
-        const created = await startChatSession(patientId, session.therapistId);
-        setChatSessionId(created.id);
-        if (!moodFromUser) setMood(created.severity);
-      }
-    } catch (err: any) {
-      if (err?.status === 401 || err?.message?.toLowerCase().includes('token')) {
-        await handleSignOut();
-      } else {
-        setError('Impossible de charger tes informations.');
-      }
-    } finally {
-      setLoading(false);
-    }
+      if (sessions.length > 0) { setChatSessionId(sessions[0].id); if (!moodFromUser) setMood(sessions[0].severity); }
+      else { const created = await startChatSession(patientId, session.therapistId); setChatSessionId(created.id); if (!moodFromUser) setMood(created.severity); }
+    } catch (err: any) { if (err?.status === 401 || err?.message?.toLowerCase().includes('token')) await handleSignOut(); else setError('Impossible de charger tes informations.'); }
+    finally { setLoading(false); }
   };
 
-  const handleSignOut = async () => {
-    await signOut();
-    router.replace('/');
-  };
-
+  const handleSignOut = async () => { await signOut(); router.replace('/'); };
   const handleSelectMood = async (value: Severity) => {
     if (!chatSessionId || !session || session.role !== 'patient') return;
-    try {
-      await api.users.update(session.patientId, { actual_mood: String(value) } as any);
-      const updated = await setSeverity(chatSessionId, value);
-      setMood(updated.severity);
-      const { summary, keywords } = simpleAutoSummary(updated.messages);
-      await setSummaryAndKeywords(chatSessionId, summary, keywords);
-    } catch { Alert.alert('Erreur', 'Impossible de sauvegarder.'); }
+    try { await api.users.update(session.patientId, { actual_mood: String(value) } as any); const updated = await setSeverity(chatSessionId, value); setMood(updated.severity); const { summary, keywords } = simpleAutoSummary(updated.messages); await setSummaryAndKeywords(chatSessionId, summary, keywords); }
+    catch { Alert.alert('Erreur', 'Impossible de sauvegarder.'); }
   };
-
   const handleSaveJournal = async () => {
     if (!session || session.role !== 'patient' || !newJournalText.trim()) return;
     setSavingJournal(true);
-    try {
-      const { entry } = await api.journal.add(session.patientId, { text: newJournalText.trim(), mood: newJournalMood });
-      setJournalEntries((prev) => [entry, ...prev]);
-      setNewJournalText('');
-      setNewJournalMood(3);
-    } catch { Alert.alert('Erreur', 'Impossible de sauvegarder.'); }
+    try { const { entry } = await api.journal.add(session.patientId, { text: newJournalText.trim(), mood: newJournalMood }); setJournalEntries((prev) => [entry, ...prev]); setNewJournalText(''); setNewJournalMood(3); }
+    catch { Alert.alert('Erreur', 'Impossible de sauvegarder.'); }
     finally { setSavingJournal(false); }
   };
-
   const fmtDate = (d: string) => new Date(d).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 
-  // ── Loading / Error states ──────────────────────────────
-  if (sessionLoading || loading) {
-    return <View style={[s.center, { flex: 1, backgroundColor: colors.bg }]}><Text style={font.bodySmall}>Chargement…</Text></View>;
-  }
-  if (error) {
-    return (
-      <View style={[s.center, { flex: 1, backgroundColor: colors.bg }]}>
-        <SectionCard variant="elevated" style={{ maxWidth: 360, alignItems: 'center' as any }}>
-          <Ionicons name="alert-circle" size={48} color={colors.error} />
-          <Text style={[font.subtitle, { color: colors.error }]}>Oups !</Text>
-          <Text style={[font.bodySmall, { textAlign: 'center' }]}>{error}</Text>
-          <Button title="Réessayer" onPress={loadData} />
-          <Button title="Déconnexion" variant="ghost" onPress={handleSignOut} />
-        </SectionCard>
-      </View>
-    );
-  }
+  if (sessionLoading || loading) return <View style={[s.center, { flex: 1, backgroundColor: colors.bg }]}><Text style={font.bodySmall}>Chargement...</Text></View>;
+  if (error) return (
+    <View style={[s.center, { flex: 1, backgroundColor: colors.bg }]}>
+      <SectionCard variant="elevated" style={{ maxWidth: 360, alignItems: 'center' as any }}><Ionicons name="alert-circle" size={48} color={colors.error} /><Text style={[font.subtitle, { color: colors.error }]}>Oups !</Text><Text style={[font.bodySmall, { textAlign: 'center' }]}>{error}</Text><Button title="Reessayer" onPress={loadData} /><Button title="Deconnexion" variant="ghost" onPress={handleSignOut} /></SectionCard>
+    </View>
+  );
 
   const therapistReports = reports.filter((r) => r.from === 'therapist');
   const aiReports = reports.filter((r) => r.from === 'ai');
-
-  // ── Section descriptions ────────────────────────────────
   const sectionDescs: Record<string, { title: string; desc: string; icon: keyof typeof Ionicons.glyphMap }> = {
-    bubble: { title: 'Ma Bulle', desc: 'Un espace confidentiel pour échanger avec ton assistant IA, disponible 24h/24. Il t\'aide à explorer tes émotions entre les séances.', icon: 'chatbubbles' },
-    journal: { title: 'Mon Journal', desc: 'Garde une trace de tes ressentis au quotidien. Cela t\'aide, toi et ton thérapeute, à identifier des tendances.', icon: 'book' },
-    reports: { title: 'Constats & Synthèses', desc: 'Retrouve ici les observations de ton thérapeute et les synthèses générées par l\'IA après tes échanges.', icon: 'reader' },
-    booking: { title: 'Rendez-vous', desc: 'Réserve un créneau avec ton thérapeute directement en ligne.', icon: 'calendar' },
+    bubble: { title: 'Ma Bulle', desc: 'Un espace confidentiel pour echanger avec ton assistant IA, disponible 24h/24.', icon: 'chatbubbles' },
+    journal: { title: 'Mon Journal', desc: 'Garde une trace de tes ressentis au quotidien.', icon: 'book' },
+    reports: { title: 'Constats', desc: 'Observations de ton therapeute et syntheses IA.', icon: 'reader' },
+    booking: { title: 'Rendez-vous', desc: 'Reserve un creneau avec ton therapeute.', icon: 'calendar' },
   };
   const currentSection = sectionDescs[activeTab] || sectionDescs.bubble;
 
-  // ── Header ──────────────────────────────────────────────
   const headerRight = isDesktop ? (
-    <Pressable onPress={handleSignOut} style={s.signOutBtn}>
-      <Ionicons name="log-out-outline" size={18} color={colors.textSecondary} />
-      <Text style={[font.bodySmall, { fontWeight: '600' }]}>Déconnexion</Text>
-    </Pressable>
+    <Pressable onPress={handleSignOut} style={s.signOutBtn}><Ionicons name="log-out-outline" size={18} color={colors.textSecondary} /><Text style={[font.bodySmall, { fontWeight: '600' }]}>Deconnexion</Text></Pressable>
   ) : (
-    <Pressable onPress={handleSignOut} style={s.mobileLogoutBtn}>
-      <Ionicons name="log-out-outline" size={20} color={colors.error} />
-    </Pressable>
+    <Pressable onPress={handleSignOut} style={s.mobileLogoutBtn}><Ionicons name="log-out-outline" size={20} color={colors.error} /></Pressable>
   );
 
-  // ── Tab: Bulle ──────────────────────────────────────────
+  // ── Bulle (innovative bubble design) ──────────────────
   const renderBubble = () => (
     <View style={s.tabContent}>
-      {/* Hero card */}
-      <View style={s.heroCard}>
-        <View style={s.heroGlow} />
-        <View style={s.heroAvatar}><Text style={{ fontSize: 44 }}>🤖</Text></View>
-        <Text style={s.heroTitle}>Assistant IA</Text>
-        <Text style={s.heroDesc}>Un espace sûr pour exprimer tes émotions, disponible 24/7</Text>
-        <Button title="Entrer dans ma bulle" icon="arrow-forward" onPress={() => router.push('/patient/chat')} size="lg" style={{ width: '100%', maxWidth: 300 }} />
-      </View>
+      {/* Floating bubble */}
+      <Pressable onPress={() => router.push('/patient/chat')} style={s.bubbleHero}>
+        <View style={s.bubbleOuter}>
+          <View style={s.bubbleDecor1} />
+          <View style={s.bubbleDecor2} />
+          <View style={s.bubbleDecor3} />
+          <Animated.View style={[s.bubbleCenter, { transform: [{ scale: pulseAnim }] }]}>
+            <Ionicons name="sparkles" size={40} color={colors.textOnPrimary} />
+          </Animated.View>
+        </View>
+        <Text style={s.bubbleTitle}>Entrer dans ma bulle</Text>
+        <Text style={s.bubbleDesc}>Ton assistant IA, confidentiel et disponible 24/7</Text>
+        <View style={s.bubbleCta}>
+          <Ionicons name="arrow-forward" size={16} color={colors.primary} />
+          <Text style={[font.bodyMedium, { color: colors.primary }]}>Commencer une discussion</Text>
+        </View>
+      </Pressable>
 
-      {/* Mood */}
       <MoodSelector value={mood} onChange={handleSelectMood} />
 
-      {/* Quick exercises */}
-      <SectionCard title="Exercices rapides" icon="fitness-outline" variant="elevated">
-        <Text style={font.bodySmall}>Des exercices simples pour t'apaiser en quelques minutes.</Text>
-        {[
-          { icon: 'fitness' as const, title: 'Respiration profonde', desc: 'Inspire 4s, retiens 4s, expire 6s', color: colors.primary },
-          { icon: 'walk' as const, title: 'Marche de 5 min', desc: "Sors prendre l'air", color: colors.success },
-          { icon: 'call' as const, title: 'Contacter un proche', desc: 'Parler peut aider', color: colors.warning },
-        ].map((ex, i) => (
-          <View key={i} style={s.exerciseRow}>
-            <View style={[s.exerciseIcon, { backgroundColor: ex.color + '14' }]}>
-              <Ionicons name={ex.icon} size={20} color={ex.color} />
+      {/* Exercises + RDV side by side on desktop */}
+      <View style={isDesktop ? s.twoColRow : s.colStack}>
+        <SectionCard title="Exercices rapides" icon="fitness-outline" variant="elevated" style={isDesktop ? { flex: 1 } : undefined}>
+          <Text style={font.bodySmall}>Des exercices simples pour t'apaiser.</Text>
+          {[
+            { icon: 'fitness' as const, title: 'Respiration profonde', desc: 'Inspire 4s, retiens 4s, expire 6s', color: colors.primary },
+            { icon: 'walk' as const, title: 'Marche de 5 min', desc: "Sors prendre l'air", color: colors.success },
+            { icon: 'call' as const, title: 'Contacter un proche', desc: 'Parler peut aider', color: colors.warning },
+          ].map((ex, i) => (
+            <View key={i} style={s.exerciseRow}>
+              <View style={[s.exerciseIcon, { backgroundColor: ex.color + '14' }]}><Ionicons name={ex.icon} size={20} color={ex.color} /></View>
+              <View style={{ flex: 1 }}><Text style={font.bodyMedium}>{ex.title}</Text><Text style={font.caption}>{ex.desc}</Text></View>
             </View>
-            <View style={{ flex: 1 }}><Text style={font.bodyMedium}>{ex.title}</Text><Text style={font.caption}>{ex.desc}</Text></View>
-          </View>
-        ))}
-      </SectionCard>
-
-      {/* Booking shortcut */}
-      {therapistBookingUrl && (
-        <SectionCard title="Prochain RDV" icon="calendar-outline" variant="elevated">
-          <Text style={font.bodySmall}>Planifie une séance avec {therapistName || 'ton thérapeute'}.</Text>
-          <Button title="Voir les créneaux" icon="calendar-outline" variant="soft" size="sm" onPress={() => setActiveTab('booking')} />
+          ))}
         </SectionCard>
-      )}
+        {therapistBookingUrl && (
+          <SectionCard title="Prochain RDV" icon="calendar-outline" variant="elevated" style={isDesktop ? { flex: 1 } : undefined}>
+            <Ionicons name="calendar" size={36} color={colors.primary} style={{ alignSelf: 'center' }} />
+            <Text style={[font.bodySmall, { textAlign: 'center' }]}>Planifie ta prochaine seance avec {therapistName || 'ton therapeute'}.</Text>
+            <Button title="Voir les creneaux" icon="calendar-outline" variant="soft" size="sm" onPress={() => setActiveTab('booking')} />
+          </SectionCard>
+        )}
+      </View>
     </View>
   );
 
-  // ── Tab: Journal ────────────────────────────────────────
-  const MOOD_LABELS = ['', 'Très mal', 'Mal', 'Moyen', 'Bien', 'Très bien'];
-  const MOOD_EMOJI = ['', '😢', '😕', '😐', '🙂', '😄'];
+  // ── Journal (redesigned - timeline + compact form) ────
   const renderJournal = () => (
     <View style={s.tabContent}>
-      <SectionCard title="Nouvelle entrée" icon="create-outline" variant="elevated">
-        <TextInput
-          placeholder="Comment te sens-tu aujourd'hui ?"
-          placeholderTextColor={colors.textTertiary}
-          multiline numberOfLines={4} value={newJournalText} onChangeText={setNewJournalText}
-          style={s.journalInput} textAlignVertical="top"
-        />
-        <View style={s.moodChipRow}>
-          <Text style={font.label}>Humeur :</Text>
-          {[1, 2, 3, 4, 5].map((v) => (
-            <Pressable key={v} onPress={() => setNewJournalMood(v)} style={[s.moodChip, newJournalMood === v && s.moodChipActive]}>
-              <Text style={{ fontSize: 16 }}>{MOOD_EMOJI[v]}</Text>
-              <Text style={[s.moodChipLabel, newJournalMood === v && { color: colors.textOnPrimary }]}>{MOOD_LABELS[v]}</Text>
-            </Pressable>
-          ))}
+      <View style={isDesktop ? s.journalDesktop : undefined}>
+        {/* Form */}
+        <View style={[s.journalForm, isDesktop && { flex: 1 }]}>
+          <Text style={font.sectionTitle}>Nouvelle entree</Text>
+          <TextInput
+            placeholder="Comment te sens-tu aujourd'hui ?"
+            placeholderTextColor={colors.textTertiary}
+            multiline value={newJournalText} onChangeText={setNewJournalText}
+            style={s.journalInput} textAlignVertical="top"
+          />
+          <View style={s.moodChipRow}>
+            {JOURNAL_MOODS.map((m) => (
+              <Pressable key={m.value} onPress={() => setNewJournalMood(m.value)} style={[s.moodChip, newJournalMood === m.value && { backgroundColor: m.color, borderColor: m.color }]}>
+                <Ionicons name={m.icon} size={16} color={newJournalMood === m.value ? '#fff' : m.color} />
+                <Text style={[s.moodChipLabel, newJournalMood === m.value && { color: '#fff' }]}>{m.label}</Text>
+              </Pressable>
+            ))}
+          </View>
+          <Button title="Enregistrer" icon="checkmark" onPress={handleSaveJournal} loading={savingJournal} disabled={!newJournalText.trim()} size="sm" />
         </View>
-        <Button title="Enregistrer" icon="checkmark" onPress={handleSaveJournal} loading={savingJournal} disabled={!newJournalText.trim()} size="sm" />
-      </SectionCard>
 
-      {journalEntries.length === 0 ? (
-        <EmptyState icon="book-outline" title="Aucune entrée" subtitle="Commence à écrire ton journal pour garder une trace de tes ressentis" />
-      ) : (
-        <View style={s.cardList}>
-          {journalEntries.map((entry: any) => (
-            <SectionCard key={entry._id} variant="elevated" style={{ gap: spacing.sm }}>
-              <View style={s.journalEntryHeader}>
-                <View style={s.journalMoodBadge}>
-                  <Text style={{ fontSize: 16 }}>{MOOD_EMOJI[entry.mood || 3]}</Text>
-                  <Text style={font.caption}>{MOOD_LABELS[entry.mood || 3]}</Text>
-                </View>
-                <Text style={font.caption}>{fmtDate(entry.date)}</Text>
-              </View>
-              <Text style={font.bodySmall}>{entry.text}</Text>
-            </SectionCard>
-          ))}
+        {/* Timeline */}
+        <View style={[s.journalTimeline, isDesktop && { flex: 1 }]}>
+          <Text style={font.sectionTitle}>Historique</Text>
+          {journalEntries.length === 0 ? (
+            <EmptyState icon="book-outline" title="Aucune entree" subtitle="Ecris ton premier ressenti" />
+          ) : (
+            <View style={s.timelineList}>
+              {journalEntries.map((entry: any, idx: number) => {
+                const m = JOURNAL_MOODS.find((jm) => jm.value === (entry.mood || 3)) || JOURNAL_MOODS[2];
+                return (
+                  <View key={entry._id || idx} style={s.timelineItem}>
+                    <View style={s.timelineLeft}>
+                      <View style={[s.timelineDot, { backgroundColor: m.color }]}><Ionicons name={m.icon} size={14} color="#fff" /></View>
+                      {idx < journalEntries.length - 1 && <View style={s.timelineLine} />}
+                    </View>
+                    <View style={s.timelineContent}>
+                      <View style={s.timelineHeader}>
+                        <Text style={[font.caption, { color: m.color, fontWeight: '600' }]}>{m.label}</Text>
+                        <Text style={font.caption}>{fmtDate(entry.date)}</Text>
+                      </View>
+                      <Text style={font.bodySmall} numberOfLines={4}>{entry.text}</Text>
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          )}
         </View>
-      )}
+      </View>
     </View>
   );
 
-  // ── Tab: Reports (SEPARATED) ────────────────────────────
+  // ── Reports ───────────────────────────────────────────
   const renderReports = () => (
     <View style={s.tabContent}>
-      {/* Sub-tabs: Thérapeute / IA */}
       <View style={s.subTabRow}>
         <Pressable onPress={() => setReportsSub('therapist')} style={[s.subTab, reportsSub === 'therapist' && s.subTabActive]}>
           <Ionicons name="person" size={16} color={reportsSub === 'therapist' ? colors.primary : colors.textTertiary} />
-          <Text style={[s.subTabText, reportsSub === 'therapist' && s.subTabTextActive]}>Constats du thérapeute</Text>
+          <Text style={[s.subTabText, reportsSub === 'therapist' && s.subTabTextActive]}>Constats therapeute</Text>
           {therapistReports.length > 0 && <View style={s.subTabBadge}><Text style={s.subTabBadgeText}>{therapistReports.length}</Text></View>}
         </Pressable>
         <Pressable onPress={() => setReportsSub('ai')} style={[s.subTab, reportsSub === 'ai' && s.subTabActive]}>
           <Ionicons name="sparkles" size={16} color={reportsSub === 'ai' ? colors.ai : colors.textTertiary} />
-          <Text style={[s.subTabText, reportsSub === 'ai' && s.subTabTextActive]}>Synthèses IA</Text>
+          <Text style={[s.subTabText, reportsSub === 'ai' && s.subTabTextActive]}>Syntheses IA</Text>
           {aiReports.length > 0 && <View style={[s.subTabBadge, { backgroundColor: colors.aiLight }]}><Text style={[s.subTabBadgeText, { color: colors.ai }]}>{aiReports.length}</Text></View>}
         </Pressable>
       </View>
-
-      {/* Description */}
       <View style={s.sectionHint}>
         <Ionicons name="information-circle-outline" size={16} color={colors.textTertiary} />
-        <Text style={[font.caption, { flex: 1 }]}>
-          {reportsSub === 'therapist'
-            ? 'Observations rédigées par ton thérapeute après vos séances. Elles t\'aident à suivre ta progression.'
-            : 'Synthèses automatiques générées par l\'IA à partir de tes échanges dans la bulle. Elles ne remplacent pas l\'avis de ton thérapeute.'}
-        </Text>
+        <Text style={[font.caption, { flex: 1 }]}>{reportsSub === 'therapist' ? 'Observations redigees par ton therapeute.' : 'Syntheses generees automatiquement par l\'IA.'}</Text>
       </View>
-
-      {/* Content */}
       {reportsSub === 'therapist' ? (
-        therapistReports.length === 0 ? (
-          <EmptyState icon="document-text-outline" title="Aucun constat" subtitle="Ton thérapeute notera ses observations après vos séances" />
-        ) : (
-          <View style={s.cardList}>{therapistReports.map((r) => <ReportCard key={r._id} content={r.content} date={fmtDate(r.date)} from={r.from} />)}</View>
-        )
+        therapistReports.length === 0 ? <EmptyState icon="document-text-outline" title="Aucun constat" subtitle="Apres vos seances" /> : <View style={s.cardList}>{therapistReports.map((r) => <ReportCard key={r._id} content={r.content} date={fmtDate(r.date)} from={r.from} />)}</View>
       ) : (
         <>
-          {lastSummary && (
-            <SectionCard icon="sparkles" iconColor={colors.ai} variant="elevated">
-              <Text style={[font.label, { color: colors.ai }]}>Dernière synthèse</Text>
-              <Text style={font.bodySmall}>{lastSummary}</Text>
-            </SectionCard>
-          )}
-          {aiReports.length === 0 && !lastSummary ? (
-            <EmptyState icon="sparkles-outline" title="Aucune synthèse IA" subtitle="L'IA créera une synthèse après tes échanges dans la bulle" />
-          ) : (
-            <View style={s.cardList}>{aiReports.map((r) => <ReportCard key={r._id} content={r.content} date={fmtDate(r.date)} from={r.from} />)}</View>
-          )}
+          {lastSummary && <SectionCard icon="sparkles" iconColor={colors.ai} variant="elevated"><Text style={[font.label, { color: colors.ai }]}>Derniere synthese</Text><Text style={font.bodySmall}>{lastSummary}</Text></SectionCard>}
+          {aiReports.length === 0 && !lastSummary ? <EmptyState icon="sparkles-outline" title="Aucune synthese" subtitle="Apres tes echanges" /> : <View style={s.cardList}>{aiReports.map((r) => <ReportCard key={r._id} content={r.content} date={fmtDate(r.date)} from={r.from} />)}</View>}
         </>
       )}
     </View>
   );
 
-  // ── Tab: Booking ────────────────────────────────────────
+  // ── Booking ───────────────────────────────────────────
   const renderBooking = () => (
     <View style={s.tabContent}>
       {therapistBookingUrl ? (
         <>
           <SectionCard variant="highlight" icon="calendar" iconColor={colors.primary}>
-            <Text style={font.subtitle}>Prendre rendez-vous avec {therapistName || 'ton thérapeute'}</Text>
-            <Text style={font.bodySmall}>Choisis le créneau qui te convient le mieux.</Text>
+            <Text style={font.subtitle}>Prendre rendez-vous avec {therapistName || 'ton therapeute'}</Text>
+            <Text style={font.bodySmall}>Choisis le creneau qui te convient le mieux.</Text>
           </SectionCard>
-          {Platform.OS === 'web' && InlineWidget ? (
-            <View style={s.calendlyWrap}><InlineWidget url={therapistBookingUrl} styles={{ height: '650px' }} /></View>
-          ) : (
-            <SectionCard variant="dark">
-              <Text style={[font.body, { color: colors.textOnDark }]}>Calendrier en ligne</Text>
-              <Text style={[font.bodySmall, { color: colors.textTertiary }]}>Tu seras redirigé(e) vers la page de réservation.</Text>
-              <Button title="Ouvrir Calendly" icon="calendar-outline" onPress={() => Linking.openURL(therapistBookingUrl)} />
-            </SectionCard>
-          )}
+          {Platform.OS === 'web' && InlineWidget ? <View style={s.calendlyWrap}><InlineWidget url={therapistBookingUrl} styles={{ height: '650px' }} /></View>
+            : <SectionCard variant="dark"><Text style={[font.body, { color: colors.textOnDark }]}>Calendrier en ligne</Text><Button title="Ouvrir Calendly" icon="calendar-outline" onPress={() => Linking.openURL(therapistBookingUrl)} /></SectionCard>}
         </>
-      ) : (
-        <EmptyState icon="time-outline" title="Bientôt disponible" subtitle="Ton thérapeute n'a pas encore configuré la réservation en ligne." />
-      )}
+      ) : <EmptyState icon="time-outline" title="Bientot disponible" subtitle="Pas encore configure par ton therapeute." />}
     </View>
   );
 
-  // ── Render ──────────────────────────────────────────────
-  const renderContent = () => {
-    switch (activeTab) {
-      case 'bubble': return renderBubble();
-      case 'journal': return renderJournal();
-      case 'reports': return renderReports();
-      case 'booking': return renderBooking();
-      default: return renderBubble();
-    }
-  };
+  const renderContent = () => { switch (activeTab) { case 'bubble': return renderBubble(); case 'journal': return renderJournal(); case 'reports': return renderReports(); case 'booking': return renderBooking(); default: return renderBubble(); } };
 
   if (isDesktop) {
     return (
       <View style={s.desktopRoot}>
-        {/* Sidebar */}
         <View style={s.desktopSidebar}>
           <View style={s.sidebarHeader}>
-            <View style={s.sidebarLogoRow}>
-              <Image source={require('@/assets/images/logo-mindia.png')} style={s.sidebarLogo} />
-              <Text style={s.sidebarTitle}>
-                <Text style={{ color: colors.text }}>Mind</Text>
-                <Text style={{ color: colors.primary }}>IA</Text>
-              </Text>
-            </View>
-            <Text style={[font.caption, { marginTop: spacing.sm }]}>Bonjour {patientName || 'toi'} 👋</Text>
+            <View style={s.sidebarLogoRow}><Image source={require('@/assets/images/logo-mindia.png')} style={s.sidebarLogo} /><Text style={s.sidebarTitle}><Text style={{ color: colors.text }}>Mind</Text><Text style={{ color: colors.primary }}>IA</Text></Text></View>
+            <Text style={[font.caption, { marginTop: spacing.sm }]}>Bonjour {patientName || 'toi'}</Text>
           </View>
-
           <View style={s.sidebarNav}>
-            {DESKTOP_NAV.map((item) => {
-              const active = item.key === activeTab;
-              return (
-                <Pressable key={item.key} onPress={() => setActiveTab(item.key)} style={[s.navItem, active && s.navItemActive]}>
-                  <Ionicons name={active ? item.iconActive : item.icon} size={20} color={active ? colors.primary : colors.textTertiary} />
-                  <View style={{ flex: 1 }}>
-                    <Text style={[s.navLabel, active && s.navLabelActive]}>{item.label}</Text>
-                    <Text style={s.navDesc}>{item.desc}</Text>
-                  </View>
-                </Pressable>
-              );
-            })}
+            {DESKTOP_NAV.map((item) => { const active = item.key === activeTab; return (
+              <Pressable key={item.key} onPress={() => setActiveTab(item.key)} style={[s.navItem, active && s.navItemActive]}>
+                <Ionicons name={active ? item.iconActive : item.icon} size={20} color={active ? colors.primary : colors.textTertiary} />
+                <View style={{ flex: 1 }}><Text style={[s.navLabel, active && s.navLabelActive]}>{item.label}</Text><Text style={s.navDesc}>{item.desc}</Text></View>
+              </Pressable>); })}
           </View>
-
-          <View style={s.sidebarFooter}>
-            <Pressable onPress={handleSignOut} style={s.sidebarSignOut}>
-              <Ionicons name="log-out-outline" size={18} color={colors.error} />
-              <Text style={[font.bodySmall, { color: colors.error, fontWeight: '600' }]}>Déconnexion</Text>
-            </Pressable>
-          </View>
+          <View style={s.sidebarFooter}><Pressable onPress={handleSignOut} style={s.sidebarSignOut}><Ionicons name="log-out-outline" size={18} color={colors.error} /><Text style={[font.bodySmall, { color: colors.error, fontWeight: '600' }]}>Deconnexion</Text></Pressable></View>
         </View>
-
-        {/* Main */}
         <View style={s.desktopMain}>
-          <View style={s.desktopContentHeader}>
-            <View>
-              <Text style={font.title}>{currentSection.title}</Text>
-              <Text style={[font.bodySmall, { marginTop: 2, maxWidth: 600 }]}>{currentSection.desc}</Text>
-            </View>
-          </View>
-          <ScrollView contentContainerStyle={s.desktopScroll} showsVerticalScrollIndicator={false}>
-            {renderContent()}
-          </ScrollView>
+          <View style={s.desktopContentHeader}><Text style={font.title}>{currentSection.title}</Text><Text style={[font.bodySmall, { marginTop: 2 }]}>{currentSection.desc}</Text></View>
+          <ScrollView contentContainerStyle={s.desktopScroll} showsVerticalScrollIndicator={false}>{renderContent()}</ScrollView>
         </View>
       </View>
     );
   }
 
-  // ── Mobile ──────────────────────────────────────────────
   return (
-    <PageLayout
-      title={currentSection.title}
-      subtitle={`Bonjour ${patientName || 'toi'} 👋`}
-      headerRight={headerRight}
-      stickyContent={
-        <View style={s.mobileDesc}>
-          <Ionicons name={currentSection.icon} size={16} color={colors.primary} />
-          <Text style={[font.caption, { flex: 1 }]}>{currentSection.desc}</Text>
-        </View>
-      }
+    <PageLayout title={currentSection.title} subtitle={`Bonjour ${patientName || 'toi'}`} headerRight={headerRight}
+      stickyContent={<View style={s.mobileDesc}><Ionicons name={currentSection.icon} size={16} color={colors.primary} /><Text style={[font.caption, { flex: 1 }]}>{currentSection.desc}</Text></View>}
       bottomContent={<BottomTabBar tabs={BOTTOM_TABS} activeKey={activeTab} onChange={setActiveTab} />}
-    >
-      {renderContent()}
-    </PageLayout>
+    >{renderContent()}</PageLayout>
   );
 }
 
@@ -472,7 +343,7 @@ const s = StyleSheet.create({
   tabContent: { gap: spacing['2xl'] },
   cardList: { gap: spacing.md },
 
-  // Desktop layout
+  // Desktop
   desktopRoot: { flex: 1, flexDirection: 'row', backgroundColor: colors.bgDesktop },
   desktopSidebar: { width: 280, backgroundColor: colors.bg, borderRightWidth: 1, borderRightColor: colors.borderLight, paddingVertical: spacing['2xl'], justifyContent: 'space-between' },
   sidebarHeader: { paddingHorizontal: spacing['2xl'], marginBottom: spacing['2xl'] },
@@ -490,31 +361,44 @@ const s = StyleSheet.create({
   desktopMain: { flex: 1 },
   desktopContentHeader: { paddingHorizontal: spacing['3xl'], paddingTop: spacing['2xl'], paddingBottom: spacing.lg, borderBottomWidth: 1, borderBottomColor: colors.borderLight, backgroundColor: colors.bg },
   desktopScroll: { padding: spacing['3xl'], gap: spacing['2xl'] },
-
-  // Mobile description
   mobileDesc: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: layout.pagePadding, paddingVertical: spacing.sm, backgroundColor: colors.primaryLight, marginHorizontal: spacing.md, borderRadius: radius.md, marginBottom: spacing.sm },
 
-  // Hero
-  heroCard: { backgroundColor: colors.bg, borderRadius: radius['2xl'], padding: spacing['3xl'], alignItems: 'center', gap: spacing.lg, borderWidth: 1, borderColor: colors.primaryMedium, overflow: 'hidden', ...shadows.lg },
-  heroGlow: { position: 'absolute', top: -60, width: 200, height: 200, borderRadius: 100, backgroundColor: colors.primaryLight, opacity: 0.6 },
-  heroAvatar: { width: 88, height: 88, borderRadius: 44, backgroundColor: colors.primaryLight, justifyContent: 'center', alignItems: 'center' },
-  heroTitle: { ...font.subtitle },
-  heroDesc: { ...font.bodySmall, textAlign: 'center', maxWidth: 280 },
+  // Bubble hero (innovative organic design)
+  bubbleHero: { alignItems: 'center', gap: spacing.lg, paddingVertical: spacing['3xl'] },
+  bubbleOuter: { width: 180, height: 180, alignItems: 'center', justifyContent: 'center' },
+  bubbleCenter: { width: 100, height: 100, borderRadius: 50, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', ...shadows.glow },
+  bubbleDecor1: { position: 'absolute', top: 0, left: 10, width: 50, height: 50, borderRadius: 25, backgroundColor: colors.primaryLight, opacity: 0.6 },
+  bubbleDecor2: { position: 'absolute', bottom: 10, right: 0, width: 36, height: 36, borderRadius: 18, backgroundColor: colors.primaryMedium, opacity: 0.5 },
+  bubbleDecor3: { position: 'absolute', top: 30, right: 10, width: 24, height: 24, borderRadius: 12, backgroundColor: colors.aiLight, opacity: 0.7 },
+  bubbleTitle: { ...font.subtitle, textAlign: 'center' },
+  bubbleDesc: { ...font.bodySmall, textAlign: 'center', maxWidth: 280 },
+  bubbleCta: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.sm, paddingHorizontal: spacing.xl, borderRadius: radius.full, backgroundColor: colors.primaryLight },
+
+  // Two-col
+  twoColRow: { flexDirection: 'row', gap: spacing.xl },
+  colStack: { gap: spacing.xl },
 
   // Exercises
   exerciseRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: spacing.sm },
-  exerciseIcon: { width: 44, height: 44, borderRadius: radius.md, justifyContent: 'center', alignItems: 'center' },
+  exerciseIcon: { width: 40, height: 40, borderRadius: radius.md, justifyContent: 'center', alignItems: 'center' },
 
   // Journal
-  journalInput: { backgroundColor: colors.bgTertiary, borderRadius: radius.md, padding: spacing.lg, fontSize: 15, color: colors.text, borderWidth: 1, borderColor: colors.border, minHeight: 100 },
-  moodChipRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flexWrap: 'wrap' },
-  moodChip: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, paddingHorizontal: spacing.md, paddingVertical: spacing.xs + 1, borderRadius: radius.full, backgroundColor: colors.bgTertiary, borderWidth: 1, borderColor: colors.border },
-  moodChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+  journalDesktop: { flexDirection: 'row', gap: spacing['2xl'] },
+  journalForm: { gap: spacing.lg },
+  journalInput: { backgroundColor: colors.bgTertiary, borderRadius: radius.md, padding: spacing.lg, fontSize: 15, color: colors.text, borderWidth: 1, borderColor: colors.border, minHeight: 90 },
+  moodChipRow: { flexDirection: 'row', gap: spacing.sm, flexWrap: 'wrap' },
+  moodChip: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, paddingHorizontal: spacing.md, paddingVertical: spacing.xs + 2, borderRadius: radius.full, backgroundColor: colors.bgTertiary, borderWidth: 1, borderColor: colors.border },
   moodChipLabel: { ...font.caption, color: colors.textSecondary },
-  journalEntryHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  journalMoodBadge: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
+  journalTimeline: { gap: spacing.lg },
+  timelineList: { gap: 0 },
+  timelineItem: { flexDirection: 'row', gap: spacing.md },
+  timelineLeft: { alignItems: 'center', width: 32 },
+  timelineDot: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  timelineLine: { width: 2, flex: 1, backgroundColor: colors.borderLight, marginVertical: spacing.xs },
+  timelineContent: { flex: 1, backgroundColor: colors.bg, borderRadius: radius.lg, padding: spacing.lg, borderWidth: 1, borderColor: colors.borderLight, marginBottom: spacing.md, gap: spacing.xs },
+  timelineHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
 
-  // Reports sub-tabs
+  // Reports
   subTabRow: { flexDirection: 'row', gap: spacing.sm },
   subTab: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, paddingVertical: spacing.md, borderRadius: radius.lg, backgroundColor: colors.bgSecondary, borderWidth: 1.5, borderColor: colors.borderLight },
   subTabActive: { backgroundColor: colors.primaryLight, borderColor: colors.primaryMedium },
@@ -523,7 +407,5 @@ const s = StyleSheet.create({
   subTabBadge: { backgroundColor: colors.primaryLight, paddingHorizontal: spacing.sm, paddingVertical: 1, borderRadius: radius.full, minWidth: 22, alignItems: 'center' },
   subTabBadgeText: { fontSize: 11, fontWeight: '700', color: colors.primary },
   sectionHint: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, paddingHorizontal: spacing.md, paddingVertical: spacing.md, backgroundColor: colors.bgSecondary, borderRadius: radius.md },
-
-  // Calendly
   calendlyWrap: { borderRadius: radius.xl, overflow: 'hidden', backgroundColor: colors.bg, ...shadows.md },
 });
