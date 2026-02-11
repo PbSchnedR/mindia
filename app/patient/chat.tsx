@@ -238,22 +238,27 @@ export default function PatientChatScreen() {
     </View>
   );
 
+  const fmtTime = (d: string) => {
+    try { return new Date(d).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }); } catch { return ''; }
+  };
+
   const renderBubble = ({ item }: { item: ChatMessage }) => {
     const isPatient = item.author === 'patient';
     const isAi = item.author === 'ai';
+    const isTherapist = item.author === 'therapist';
     return (
-      <View style={[s.bubbleWrap, { alignItems: isPatient ? 'flex-end' : 'flex-start' }]}>
+      <View style={[s.bubbleRow, isPatient && s.bubbleRowRight]}>
         {!isPatient && (
           <View style={[s.avatarDot, isAi ? s.avatarAi : s.avatarTherapist]}>
-            <Ionicons
-              name={isAi ? 'sparkles' : 'person'}
-              size={12}
-              color={isAi ? colors.ai : colors.success}
-            />
+            <Ionicons name={isAi ? 'sparkles' : 'person'} size={12} color={isAi ? colors.ai : colors.success} />
           </View>
         )}
         <View style={[s.bubble, isPatient ? s.bubblePatient : isAi ? s.bubbleAi : s.bubbleTherapist]}>
+          <Text style={[s.bubbleSender, { color: isPatient ? '#FFFFFF' : isAi ? colors.ai : colors.success }]}>
+            {isPatient ? 'Toi' : isAi ? 'IA' : 'Thérapeute'}
+          </Text>
           <Text style={[s.bubbleText, isPatient && { color: colors.textOnPrimary }]}>{item.text}</Text>
+          <Text style={[s.bubbleTime, isPatient && { color: 'rgba(255,255,255,0.7)' }]}>{fmtTime(item.createdAt)}</Text>
         </View>
       </View>
     );
@@ -509,10 +514,13 @@ const s = StyleSheet.create({
     paddingVertical: spacing.lg,
     paddingHorizontal: spacing.xl,
   },
-  bubbleWrap: {
-    width: '100%',
+  bubbleRow: {
     flexDirection: 'row',
+    alignItems: 'flex-end',
     gap: spacing.sm,
+  },
+  bubbleRowRight: {
+    flexDirection: 'row-reverse',
   },
   avatarDot: {
     width: 28,
@@ -520,7 +528,6 @@ const s = StyleSheet.create({
     borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    marginTop: 2,
   },
   avatarAi: {
     backgroundColor: colors.aiLight,
@@ -529,27 +536,37 @@ const s = StyleSheet.create({
     backgroundColor: colors.successLight,
   },
   bubble: {
-    maxWidth: '78%',
+    maxWidth: '75%',
     borderRadius: radius.xl,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
+    padding: spacing.lg,
+    gap: spacing.xs,
   },
   bubblePatient: {
     backgroundColor: colors.primary,
-    borderBottomRightRadius: spacing.xs,
+    borderBottomRightRadius: radius.xs,
   },
   bubbleAi: {
     backgroundColor: colors.bgSecondary,
-    borderBottomLeftRadius: spacing.xs,
+    borderBottomLeftRadius: radius.xs,
     borderWidth: 1,
     borderColor: colors.borderLight,
   },
   bubbleTherapist: {
     backgroundColor: colors.successLight,
-    borderBottomLeftRadius: spacing.xs,
+    borderBottomLeftRadius: radius.xs,
+  },
+  bubbleSender: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.3,
   },
   bubbleText: {
     ...font.body,
+  },
+  bubbleTime: {
+    fontSize: 10,
+    color: colors.textTertiary,
+    alignSelf: 'flex-end',
   },
 
   // Input

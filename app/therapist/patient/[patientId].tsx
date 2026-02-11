@@ -226,9 +226,9 @@ export default function TherapistPatientDetailScreen() {
     </View>
   );
 
-  // ── Reports Tab ────────────────────────────────────────
-  const renderReports = () => (
-    <View style={s.tabContent}>
+  // ── Reports: sticky header (sub-tabs) + scrollable content ──
+  const renderReportsStickyHeader = () => (
+    <View style={s.reportsStickyHeader}>
       <View style={s.subTabRow}>
         <Pressable onPress={() => setReportsSub('therapist')} style={[s.subTab, reportsSub === 'therapist' && s.subTabActive]}>
           <Ionicons name="person" size={16} color={reportsSub === 'therapist' ? colors.primary : colors.textTertiary} />
@@ -241,8 +241,20 @@ export default function TherapistPatientDetailScreen() {
           {aiReports.length > 0 && <View style={[s.subTabBadge, { backgroundColor: colors.aiLight }]}><Text style={[s.subTabBadgeText, { color: colors.ai }]}>{aiReports.length}</Text></View>}
         </Pressable>
       </View>
-      <View style={s.sectionHint}><Ionicons name="information-circle-outline" size={16} color={colors.textTertiary} /><Text style={[font.caption, { flex: 1 }]}>{reportsSub === 'therapist' ? 'Vos observations cliniques. Visibles par le patient.' : 'Syntheses generees par l\'IA.'}</Text></View>
-      {reportsSub === 'therapist' && <Button title="Ajouter un constat" icon="add" variant="soft" onPress={() => setShowReportModal(true)} />}
+      <View style={s.reportsHeaderActions}>
+        <View style={s.sectionHint}><Ionicons name="information-circle-outline" size={16} color={colors.textTertiary} /><Text style={[font.caption, { flex: 1 }]}>{reportsSub === 'therapist' ? 'Vos observations cliniques. Visibles par le patient.' : 'Syntheses generees par l\'IA.'}</Text></View>
+        {reportsSub === 'therapist' && (
+          <Pressable onPress={() => setShowReportModal(true)} style={s.addReportBtn}>
+            <Ionicons name="add" size={16} color={colors.primary} />
+            <Text style={[font.bodySmall, { color: colors.primary, fontWeight: '600' }]}>Ajouter</Text>
+          </Pressable>
+        )}
+      </View>
+    </View>
+  );
+
+  const renderReports = () => (
+    <View style={s.tabContent}>
       {reportsSub === 'therapist' ? (
         therapistReports.length === 0 ? <EmptyState icon="document-text-outline" title="Aucun constat" subtitle="Ajoutez vos observations" /> : <View style={s.cardList}>{therapistReports.map((r) => <ReportCard key={r._id} content={r.content} date={fmtDate(r.date)} from={r.from} />)}</View>
       ) : (
@@ -294,7 +306,7 @@ export default function TherapistPatientDetailScreen() {
                 </View>
               )}
               <View style={[s.chatBubble, isTherapist ? s.chatBubbleTherapist : isAI ? s.chatBubbleAI : s.chatBubblePatient]}>
-                <Text style={[s.chatSender, { color: isTherapist ? colors.primaryDark : isAI ? colors.ai : colors.primary }]}>
+                <Text style={[s.chatSender, { color: isTherapist ? '#FFFFFF' : isAI ? colors.ai : colors.primary }]}>
                   {isTherapist ? 'Vous' : isAI ? 'IA' : 'Patient'}
                 </Text>
                 <Text style={[font.bodySmall, isTherapist && { color: colors.textOnPrimary }]}>{msg.text}</Text>
@@ -361,6 +373,7 @@ export default function TherapistPatientDetailScreen() {
           </View>
           <View style={s.desktopMain}>
             <View style={s.desktopContentHeader}><Text style={font.title}>{sectionDesc.title}</Text><Text style={[font.bodySmall, { marginTop: 2 }]}>{sectionDesc.desc}</Text></View>
+            {activeTab === 'reports' && renderReportsStickyHeader()}
             {activeTab === 'discussion' ? (
               <View style={{ flex: 1 }}>{renderContent()}</View>
             ) : (
@@ -392,7 +405,12 @@ export default function TherapistPatientDetailScreen() {
           title={`${patient.firstName} ${patient.lastName}`}
           subtitle={patientEmail}
           headerRight={<HeaderIconButton icon="arrow-back" onPress={handleBack} />}
-          stickyContent={<View style={s.mobileSectionDesc}><Ionicons name="information-circle-outline" size={14} color={colors.primary} /><Text style={[font.caption, { flex: 1, color: colors.primary }]}>{sectionDesc.desc}</Text></View>}
+          stickyContent={
+            <View>
+              <View style={s.mobileSectionDesc}><Ionicons name="information-circle-outline" size={14} color={colors.primary} /><Text style={[font.caption, { flex: 1, color: colors.primary }]}>{sectionDesc.desc}</Text></View>
+              {activeTab === 'reports' && renderReportsStickyHeader()}
+            </View>
+          }
           bottomContent={<BottomTabBar tabs={BOTTOM_TABS} activeKey={activeTab} onChange={setActiveTab} />}
         >{renderContent()}</PageLayout>
       )}
@@ -441,6 +459,9 @@ const s = StyleSheet.create({
   qrMetaItem: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
 
   // Reports
+  reportsStickyHeader: { paddingHorizontal: spacing['3xl'], paddingTop: spacing.lg, paddingBottom: spacing.md, backgroundColor: colors.bg, borderBottomWidth: 1, borderBottomColor: colors.borderLight, gap: spacing.md },
+  reportsHeaderActions: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.md },
+  addReportBtn: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: radius.full, backgroundColor: colors.primaryLight, borderWidth: 1, borderColor: colors.primaryMedium },
   subTabRow: { flexDirection: 'row', gap: spacing.sm },
   subTab: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, paddingVertical: spacing.md, borderRadius: radius.lg, backgroundColor: colors.bgSecondary, borderWidth: 1.5, borderColor: colors.borderLight },
   subTabActive: { backgroundColor: colors.primaryLight, borderColor: colors.primaryMedium },

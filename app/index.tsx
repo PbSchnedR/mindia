@@ -176,9 +176,10 @@ export default function LandingScreen() {
               </Animated.View>
               <Animated.View style={{ opacity: titleOpacity, transform: [{ translateY: titleTranslateY }] }}>
                 <Text style={s.desktopTitle}>
-                  <Text style={{ color: colors.text }}>Mind</Text>
-                  <Text style={{ color: colors.primary }}>IA</Text>
+                  <Text style={{ color: '#FFFFFF' }}>Mind</Text>
+                  <Text style={s.desktopTitleAccent}>IA</Text>
                 </Text>
+                <View style={s.desktopTitleUnderline} />
                 <Text style={s.desktopTagline}>Votre relai entre les séances</Text>
               </Animated.View>
               <Animated.View style={[s.desktopFeatures, { opacity: formOpacity }]}>
@@ -263,10 +264,12 @@ const s = StyleSheet.create({
   desktopPage: { flex: 1, flexDirection: 'row', backgroundColor: colors.bgDesktop },
   desktopLeft: { flex: 1, backgroundColor: colors.bgDark, justifyContent: 'center', alignItems: 'center', paddingHorizontal: spacing['5xl'] },
   desktopBrand: { maxWidth: 440, gap: spacing['2xl'] },
-  desktopLogoWrap: { width: 96, height: 96, borderRadius: radius['3xl'], backgroundColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center', ...shadows.glow },
-  desktopLogo: { width: 60, height: 60 },
-  desktopTitle: { fontSize: 56, fontWeight: '900', letterSpacing: -2 },
-  desktopTagline: { fontSize: 18, fontWeight: '400', color: colors.textOnDark, lineHeight: 28, marginTop: spacing.sm },
+  desktopLogoWrap: { width: 120, height: 120, borderRadius: 30, backgroundColor: 'rgba(255,255,255,0.08)', alignItems: 'center', justifyContent: 'center', ...shadows.glow, borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)' },
+  desktopLogo: { width: 80, height: 80 },
+  desktopTitle: { fontSize: 72, fontWeight: '900', letterSpacing: -3, marginTop: spacing.lg },
+  desktopTitleAccent: { color: colors.primary, fontStyle: 'italic' },
+  desktopTitleUnderline: { width: 60, height: 4, borderRadius: 2, backgroundColor: colors.primary, marginTop: spacing.sm, opacity: 0.8 },
+  desktopTagline: { fontSize: 18, fontWeight: '400', color: 'rgba(255,255,255,0.7)', lineHeight: 28, marginTop: spacing.lg },
   desktopFeatures: { marginTop: spacing.lg, gap: spacing.xl },
   featureRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.lg },
   featureIcon: { width: 48, height: 48, borderRadius: radius.lg, backgroundColor: 'rgba(99,102,241,0.15)', justifyContent: 'center', alignItems: 'center' },
