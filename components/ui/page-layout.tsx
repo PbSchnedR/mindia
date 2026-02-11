@@ -3,7 +3,6 @@ import {
   View,
   ScrollView,
   StyleSheet,
-  Platform,
   StatusBar,
   Pressable,
   Text,
@@ -46,7 +45,7 @@ export function PageLayout({
     <>
       <StatusBar barStyle="dark-content" backgroundColor={bg} />
       <View style={[styles.container, { backgroundColor: bg }]}>
-        {Platform.OS === 'android' && <View style={styles.safeArea} />}
+        <View style={styles.safeArea} />
 
         {!hideHeader && (
           <View style={[styles.headerOuter, isDesktop && styles.headerOuterDesktop]}>

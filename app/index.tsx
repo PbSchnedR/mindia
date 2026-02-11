@@ -46,16 +46,12 @@ export default function LandingScreen() {
 
   useEffect(() => {
     if (!sessionLoading && !session) {
-      Animated.sequence([
-        Animated.parallel([
-          Animated.spring(logoScale, { toValue: 1, useNativeDriver: true, damping: 12, stiffness: 100 }),
-          Animated.timing(logoOpacity, { toValue: 1, duration: 500, useNativeDriver: true }),
-        ]),
-        Animated.parallel([
-          Animated.timing(titleOpacity, { toValue: 1, duration: 400, useNativeDriver: true }),
-          Animated.spring(titleTranslateY, { toValue: 0, useNativeDriver: true, damping: 14, stiffness: 120 }),
-        ]),
-        Animated.timing(formOpacity, { toValue: 1, duration: 400, useNativeDriver: true }),
+      Animated.parallel([
+        Animated.spring(logoScale, { toValue: 1, useNativeDriver: true, damping: 18, stiffness: 200 }),
+        Animated.timing(logoOpacity, { toValue: 1, duration: 250, useNativeDriver: true }),
+        Animated.timing(titleOpacity, { toValue: 1, duration: 300, delay: 100, useNativeDriver: true }),
+        Animated.spring(titleTranslateY, { toValue: 0, useNativeDriver: true, damping: 18, stiffness: 200 }),
+        Animated.timing(formOpacity, { toValue: 1, duration: 300, delay: 200, useNativeDriver: true }),
       ]).start();
     }
   }, [sessionLoading, session]);
@@ -123,7 +119,7 @@ export default function LandingScreen() {
 
   // ── Shared form ──────────────────────────────────────────
   const renderForm = () => (
-    <Animated.View style={{ opacity: formOpacity, gap: spacing['2xl'] }}>
+    <Animated.View style={{ opacity: formOpacity, gap: spacing.lg }}>
       <View style={s.toggle} onLayout={(e) => setToggleWidth(e.nativeEvent.layout.width)}>
         <Animated.View style={[s.toggleSlider, { transform: [{ translateX }] }]} />
         <Pressable style={s.toggleBtn} onPress={() => switchMode('patient')}>
@@ -138,20 +134,34 @@ export default function LandingScreen() {
 
       {mode === 'patient' ? (
         <View style={s.formFields}>
-          {Platform.OS !== 'web' && (
-            <>
-              <Button title={isLoading ? 'Connexion...' : 'Scanner mon QR code'} icon="qr-code-outline" onPress={() => setShowScanner(true)} disabled={isLoading} size="lg" />
-              <View style={s.orDivider}><View style={s.orLine} /><Text style={s.orText}>ou</Text><View style={s.orLine} /></View>
-            </>
-          )}
-          <TextField label="Email patient" placeholder="prenom@exemple.com" value={patientEmail} onChangeText={setPatientEmail} autoCapitalize="none" keyboardType="email-address" icon="mail-outline" />
-          <Button title="Accéder à mon espace" icon="arrow-forward" onPress={handlePatientAccess} loading={patientLoading} size="lg" />
-          {Platform.OS === 'web' && (
-            <>
-              <View style={s.orDivider}><View style={s.orLine} /><Text style={s.orText}>ou</Text><View style={s.orLine} /></View>
-              <Button title="Scanner un QR code" icon="qr-code-outline" variant="secondary" onPress={() => setShowScanner(true)} disabled={isLoading} />
-            </>
-          )}
+          <TextField
+            label="Email patient"
+            placeholder="prenom@exemple.com"
+            value={patientEmail}
+            onChangeText={setPatientEmail}
+            autoCapitalize="none"
+            keyboardType="email-address"
+            icon="mail-outline"
+          />
+          <Button
+            title="Accéder à mon espace"
+            icon="arrow-forward"
+            onPress={handlePatientAccess}
+            loading={patientLoading}
+            size="lg"
+          />
+          <View style={s.orDivider}>
+            <View style={s.orLine} />
+            <Text style={s.orText}>ou</Text>
+            <View style={s.orLine} />
+          </View>
+          <Button
+            title={isLoading ? 'Connexion...' : 'Scanner mon QR code'}
+            icon="qr-code-outline"
+            variant="soft"
+            onPress={() => setShowScanner(true)}
+            disabled={isLoading}
+          />
         </View>
       ) : (
         <View style={s.formFields}>
@@ -222,8 +232,8 @@ export default function LandingScreen() {
     <>
       <StatusBar barStyle="dark-content" backgroundColor={colors.bg} />
       <View style={s.mobilePage}>
-        {Platform.OS === 'android' && <View style={{ height: layout.safeAreaTop }} />}
-        <ScrollView contentContainerStyle={s.mobileScroll} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+        <View style={{ height: layout.safeAreaTop }} />
+        <View style={s.mobileContent}>
           <View style={s.mobileHeader}>
             <Animated.View style={[s.mobileLogoWrap, { transform: [{ scale: logoScale }], opacity: logoOpacity }]}>
               <Image source={require('@/assets/images/logo-mindia.png')} style={s.mobileLogo} />
@@ -238,14 +248,11 @@ export default function LandingScreen() {
           </View>
 
           <View style={s.mobileCard}>
-            <View style={{ alignItems: 'center', gap: spacing.sm }}>
-              <Text style={s.cardTitle}>Espace Démo</Text>
-              <Text style={s.cardSubtitle}>Connecte-toi en tant que patient ou thérapeute</Text>
-            </View>
             {renderForm()}
           </View>
+
           <Text style={s.footer}>En continuant, vous acceptez nos conditions d'utilisation et notre politique de confidentialité.</Text>
-        </ScrollView>
+        </View>
       </View>
       <Modal visible={showScanner} animationType="slide" onRequestClose={() => setShowScanner(false)}>
         <QRScanner onScan={handleQRScan} onCancel={() => setShowScanner(false)} />
@@ -280,25 +287,25 @@ const s = StyleSheet.create({
 
   // Mobile
   mobilePage: { flex: 1, backgroundColor: colors.bg },
-  mobileScroll: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: spacing['2xl'], paddingVertical: spacing['4xl'] },
-  mobileHeader: { alignItems: 'center', marginBottom: spacing['3xl'] },
-  mobileLogoWrap: { width: 88, height: 88, borderRadius: radius['2xl'], backgroundColor: colors.primaryLight, justifyContent: 'center', alignItems: 'center', marginBottom: spacing.xl, ...shadows.glow },
-  mobileLogo: { width: 56, height: 56 },
-  mobileTitle: { fontSize: 44, fontWeight: '900', letterSpacing: -1.5, marginBottom: spacing.xs },
-  mobileTagline: { ...font.body, fontWeight: '500', color: colors.textSecondary },
-  mobileCard: { gap: spacing['2xl'] },
+  mobileContent: { flex: 1, justifyContent: 'center', paddingHorizontal: spacing['2xl'] },
+  mobileHeader: { alignItems: 'center', marginBottom: spacing.xl },
+  mobileLogoWrap: { width: 72, height: 72, borderRadius: radius.xl, backgroundColor: colors.primaryLight, justifyContent: 'center', alignItems: 'center', marginBottom: spacing.md, ...shadows.glow },
+  mobileLogo: { width: 46, height: 46 },
+  mobileTitle: { fontSize: 36, fontWeight: '900', letterSpacing: -1.5, marginBottom: 2 },
+  mobileTagline: { ...font.bodySmall, fontWeight: '500', color: colors.textSecondary },
+  mobileCard: { gap: spacing.xl },
 
   // Shared
   cardTitle: { ...font.subtitle, textAlign: 'center' },
   cardSubtitle: { ...font.bodySmall, textAlign: 'center', lineHeight: 20 },
   toggle: { position: 'relative', flexDirection: 'row', backgroundColor: colors.bgTertiary, borderRadius: radius.md, padding: 4 },
   toggleSlider: { position: 'absolute', left: 4, top: 4, bottom: 4, width: '48%', backgroundColor: colors.primary, borderRadius: radius.sm },
-  toggleBtn: { flex: 1, paddingVertical: spacing.md, borderRadius: radius.sm, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: spacing.sm, zIndex: 1 },
+  toggleBtn: { flex: 1, paddingVertical: spacing.sm + 2, borderRadius: radius.sm, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: spacing.sm, zIndex: 1 },
   toggleText: { fontSize: 14, fontWeight: '600', color: colors.textSecondary },
   toggleTextActive: { color: colors.textOnPrimary },
-  formFields: { gap: spacing.lg },
-  orDivider: { flexDirection: 'row', alignItems: 'center', paddingVertical: spacing.xs },
+  formFields: { gap: spacing.md },
+  orDivider: { flexDirection: 'row', alignItems: 'center', paddingVertical: 2 },
   orLine: { flex: 1, height: 1, backgroundColor: colors.border },
   orText: { paddingHorizontal: spacing.lg, ...font.caption, fontSize: 13 },
-  footer: { ...font.caption, textAlign: 'center', marginTop: spacing['3xl'], lineHeight: 18 },
+  footer: { ...font.caption, textAlign: 'center', marginTop: spacing.lg, lineHeight: 18 },
 });

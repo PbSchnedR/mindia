@@ -164,15 +164,15 @@ export default function TherapistPatientDetailScreen() {
           <View style={s.overviewCardHeader}>
             <Ionicons name="heart" size={18} color={mood?.color || colors.textTertiary} />
             <Text style={font.sectionTitle}>Humeur actuelle</Text>
-          </View>
+      </View>
           {mood ? (
             <View style={s.moodDisplay}>
               <View style={[s.moodIcon, { backgroundColor: mood.bg }]}>
                 <Ionicons name={mood.icon} size={32} color={mood.color} />
-              </View>
+        </View>
               <Text style={[font.bodyMedium, { color: mood.color, fontWeight: '700' }]}>{mood.label}</Text>
               <Text style={font.caption}>Dernier etat renseigne</Text>
-            </View>
+      </View>
           ) : <Text style={font.caption}>Non renseigne</Text>}
         </View>
 
@@ -181,49 +181,49 @@ export default function TherapistPatientDetailScreen() {
           <View style={s.overviewCardHeader}>
             <Ionicons name="chatbubble" size={18} color={colors.primary} />
             <Text style={font.sectionTitle}>Dernier message</Text>
-          </View>
+                  </View>
           {lastPatientMessage ? (
             <View style={{ gap: spacing.sm }}>
               <Text style={font.bodySmall} numberOfLines={3}>{lastPatientMessage.text}</Text>
               <Text style={font.caption}>{fmtDate(lastPatientMessage.date)}</Text>
-            </View>
+                    </View>
           ) : <Text style={font.caption}>Aucun message recu</Text>}
           <Pressable onPress={() => setActiveTab('discussion')} style={s.quickAction}>
             <Ionicons name="send" size={14} color={colors.primary} />
             <Text style={[font.bodySmall, { color: colors.primary, fontWeight: '600' }]}>Envoyer un message</Text>
-          </Pressable>
-        </View>
-      </View>
+                  </Pressable>
+                </View>
+                  </View>
 
       {/* Patient info */}
       <View style={s.overviewCard}>
         <View style={s.overviewCardHeader}>
           <Ionicons name="person" size={18} color={colors.primary} />
           <Text style={font.sectionTitle}>Informations patient</Text>
-        </View>
+                      </View>
         <View style={s.infoGrid}>
           <View style={s.infoItem}><Ionicons name="mail-outline" size={16} color={colors.textTertiary} /><View><Text style={font.caption}>Email</Text><Text style={font.bodyMedium}>{patientEmail || '--'}</Text></View></View>
           <View style={s.infoItem}><Ionicons name="bookmark-outline" size={16} color={colors.textTertiary} /><View><Text style={font.caption}>Sujet</Text><Text style={font.bodyMedium}>{patient.reason || 'Non precise'}</Text></View></View>
           <View style={s.infoItem}><Ionicons name="calendar-outline" size={16} color={colors.textTertiary} /><View><Text style={font.caption}>Seances</Text><Text style={font.bodyMedium}>{patient.sessionCount ?? '--'}</Text></View></View>
-        </View>
-      </View>
+                            </View>
+                          </View>
 
       {/* QR Code - compact */}
       <View style={[s.overviewCard, { alignItems: 'center' }]}>
         <View style={s.overviewCardHeader}>
           <Ionicons name="qr-code" size={18} color={colors.primary} />
           <Text style={font.sectionTitle}>QR Code d'acces</Text>
-        </View>
+                    </View>
         <View style={s.qrCodeCompact}>
           {magicToken ? <QRCodeDisplay value={magicToken} size={140} backgroundColor="#fff" color="#111827" /> : <Text style={[font.caption, { color: colors.error }]}>Indisponible</Text>}
-        </View>
+                  </View>
         <View style={s.qrMeta}>
           <View style={s.qrMetaItem}><Ionicons name="shield-checkmark" size={14} color={colors.primary} /><Text style={font.caption}>Usage unique</Text></View>
           <View style={s.qrMetaItem}><Ionicons name="time" size={14} color={colors.primary} /><Text style={font.caption}>Expire dans {tokenExpiresIn}</Text></View>
-        </View>
+                      </View>
         <Button title="Regenerer" variant="soft" icon="refresh" size="sm" onPress={handleRegenerateQR} />
-      </View>
-    </View>
+                    </View>
+                </View>
   );
 
   // ── Reports: sticky header (sub-tabs) + scrollable content ──
@@ -234,7 +234,7 @@ export default function TherapistPatientDetailScreen() {
           <Ionicons name="person" size={16} color={reportsSub === 'therapist' ? colors.primary : colors.textTertiary} />
           <Text style={[s.subTabText, reportsSub === 'therapist' && s.subTabTextActive]}>Mes constats</Text>
           {therapistReports.length > 0 && <View style={s.subTabBadge}><Text style={s.subTabBadgeText}>{therapistReports.length}</Text></View>}
-        </Pressable>
+                          </Pressable>
         <Pressable onPress={() => setReportsSub('ai')} style={[s.subTab, reportsSub === 'ai' && s.subTabActive]}>
           <Ionicons name="sparkles" size={16} color={reportsSub === 'ai' ? colors.ai : colors.textTertiary} />
           <Text style={[s.subTabText, reportsSub === 'ai' && s.subTabTextActive]}>Constats IA</Text>
@@ -248,9 +248,9 @@ export default function TherapistPatientDetailScreen() {
             <Ionicons name="add" size={16} color={colors.primary} />
             <Text style={[font.bodySmall, { color: colors.primary, fontWeight: '600' }]}>Ajouter</Text>
           </Pressable>
-        )}
-      </View>
-    </View>
+                      )}
+                    </View>
+                  </View>
   );
 
   const renderReports = () => (
@@ -259,8 +259,8 @@ export default function TherapistPatientDetailScreen() {
         therapistReports.length === 0 ? <EmptyState icon="document-text-outline" title="Aucun constat" subtitle="Ajoutez vos observations" /> : <View style={s.cardList}>{therapistReports.map((r) => <ReportCard key={r._id} content={r.content} date={fmtDate(r.date)} from={r.from} />)}</View>
       ) : (
         aiReports.length === 0 ? <EmptyState icon="sparkles-outline" title="Aucun constat IA" subtitle="Apres les echanges du patient" /> : <View style={s.cardList}>{aiReports.map((r) => <ReportCard key={r._id} content={r.content} date={fmtDate(r.date)} from={r.from} />)}</View>
-      )}
-    </View>
+                    )}
+                  </View>
   );
 
   // ── Discussion Tab (Chat-like interface) ───────────────
@@ -274,11 +274,11 @@ export default function TherapistPatientDetailScreen() {
               <Pressable key={c.id} onPress={() => handleSelectConversation(c.id)} style={[s.convChip, c.id === conversationId && s.convChipActive]}>
                 <Text style={[s.convChipText, c.id === conversationId && s.convChipTextActive]}>
                   {new Date(c.createdAt).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })}
-                </Text>
-              </Pressable>
+                  </Text>
+                </Pressable>
             ))}
           </ScrollView>
-        </View>
+              </View>
       )}
 
       {/* Messages area */}
@@ -293,7 +293,7 @@ export default function TherapistPatientDetailScreen() {
           <View style={s.chatEmpty}>
             <Ionicons name="chatbubbles-outline" size={48} color={colors.textTertiary} />
             <Text style={[font.bodySmall, { textAlign: 'center' }]}>Aucun message dans cette conversation</Text>
-          </View>
+                          </View>
         ) : messages.map((msg, i) => {
           const isTherapist = msg.from === 'therapist';
           const isPatientMsg = msg.from === 'patient';
@@ -303,16 +303,16 @@ export default function TherapistPatientDetailScreen() {
               {!isTherapist && (
                 <View style={[s.chatAvatar, { backgroundColor: isPatientMsg ? colors.primaryLight : colors.aiLight }]}>
                   <Ionicons name={isPatientMsg ? 'person' : 'sparkles'} size={14} color={isPatientMsg ? colors.primary : colors.ai} />
-                </View>
+                        </View>
               )}
               <View style={[s.chatBubble, isTherapist ? s.chatBubbleTherapist : isAI ? s.chatBubbleAI : s.chatBubblePatient]}>
                 <Text style={[s.chatSender, { color: isTherapist ? '#FFFFFF' : isAI ? colors.ai : colors.primary }]}>
                   {isTherapist ? 'Vous' : isAI ? 'IA' : 'Patient'}
-                </Text>
+                          </Text>
                 <Text style={[font.bodySmall, isTherapist && { color: colors.textOnPrimary }]}>{msg.text}</Text>
                 <Text style={[s.chatTime, isTherapist && { color: 'rgba(255,255,255,0.7)' }]}>{fmtDate(msg.createdAt || msg.date)}</Text>
+                </View>
               </View>
-            </View>
           );
         })}
       </ScrollView>
@@ -331,8 +331,8 @@ export default function TherapistPatientDetailScreen() {
         <Pressable onPress={handleSendChatMessage} disabled={sendingMessage || !messageText.trim()} style={[s.chatSendBtn, (!messageText.trim()) && { opacity: 0.4 }]}>
           <Ionicons name="send" size={18} color={colors.textOnPrimary} />
         </Pressable>
-      </View>
-    </View>
+                  </View>
+                </View>
   );
 
   const renderContent = () => { switch (activeTab) { case 'overview': return renderOverview(); case 'reports': return renderReports(); case 'discussion': return renderDiscussion(); default: return renderOverview(); } };
@@ -362,15 +362,15 @@ export default function TherapistPatientDetailScreen() {
               <Pressable onPress={handleBack} style={s.backLink}><Ionicons name="arrow-back" size={18} color={colors.textSecondary} /><Text style={[font.bodySmall, { fontWeight: '600' }]}>Retour aux patients</Text></Pressable>
               <Text style={font.subtitle}>{patient.firstName} {patient.lastName}</Text>
               <Text style={font.caption}>{patientEmail}</Text>
-            </View>
+                  </View>
             <View style={s.sidebarNavList}>
               {DESKTOP_NAV.map((item) => { const active = item.key === activeTab; return (
                 <Pressable key={item.key} onPress={() => setActiveTab(item.key)} style={[s.dNavItem, active && s.dNavItemActive]}>
                   <Ionicons name={active ? item.iconActive : item.icon} size={20} color={active ? colors.primary : colors.textTertiary} />
                   <View style={{ flex: 1 }}><Text style={[s.dNavLabel, active && s.dNavLabelActive]}>{item.label}</Text><Text style={s.dNavDesc}>{item.desc}</Text></View>
                 </Pressable>); })}
-            </View>
-          </View>
+                        </View>
+                      </View>
           <View style={s.desktopMain}>
             <View style={s.desktopContentHeader}><Text style={font.title}>{sectionDesc.title}</Text><Text style={[font.bodySmall, { marginTop: 2 }]}>{sectionDesc.desc}</Text></View>
             {activeTab === 'reports' && renderReportsStickyHeader()}
@@ -378,9 +378,9 @@ export default function TherapistPatientDetailScreen() {
               <View style={{ flex: 1 }}>{renderContent()}</View>
             ) : (
               <ScrollView contentContainerStyle={s.desktopScroll} showsVerticalScrollIndicator={false}>{renderContent()}</ScrollView>
-            )}
-          </View>
-        </View>
+                )}
+                  </View>
+              </View>
         {renderModals()}
       </>
     );
@@ -394,12 +394,12 @@ export default function TherapistPatientDetailScreen() {
           <View style={s.mobileDiscHeader}>
             <Pressable onPress={handleBack} style={s.mobileBackBtn}><Ionicons name="arrow-back" size={20} color={colors.text} /></Pressable>
             <View style={{ flex: 1 }}><Text style={font.bodyMedium}>{patient.firstName} {patient.lastName}</Text><Text style={font.caption}>Discussion</Text></View>
-          </View>
+            </View>
           {renderContent()}
           <View style={{ paddingBottom: Platform.OS === 'android' ? spacing.lg : 0 }}>
             <BottomTabBar tabs={BOTTOM_TABS} activeKey={activeTab} onChange={setActiveTab} />
+            </View>
           </View>
-        </View>
       ) : (
         <PageLayout
           title={`${patient.firstName} ${patient.lastName}`}
@@ -497,7 +497,7 @@ const s = StyleSheet.create({
   // Mobile discussion header
   mobileDiscHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingHorizontal: spacing.lg, paddingTop: spacing['3xl'], paddingBottom: spacing.md, backgroundColor: colors.bg, borderBottomWidth: 1, borderBottomColor: colors.borderLight },
   mobileBackBtn: { width: 36, height: 36, borderRadius: 18, backgroundColor: colors.bgTertiary, alignItems: 'center', justifyContent: 'center' },
-
+  
   // Modal
   modalOverlay: { flex: 1, backgroundColor: colors.overlay, justifyContent: 'center', alignItems: 'center', padding: spacing['2xl'] },
   modalCard: { backgroundColor: colors.bg, borderRadius: radius['2xl'], width: '100%', maxWidth: 520, maxHeight: '90%', ...shadows.lg },
