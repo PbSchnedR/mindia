@@ -256,8 +256,8 @@ export default function PatientDashboardScreen() {
   );
 
   // ── Reports ───────────────────────────────────────────
-  const renderReports = () => (
-    <View style={s.tabContent}>
+  const renderReportsStickyHeader = () => (
+    <View style={s.reportsStickyHeader}>
       <View style={s.subTabRow}>
         <Pressable onPress={() => setReportsSub('therapist')} style={[s.subTab, reportsSub === 'therapist' && s.subTabActive]}>
           <Ionicons name="person" size={16} color={reportsSub === 'therapist' ? colors.primary : colors.textTertiary} />
@@ -274,12 +274,38 @@ export default function PatientDashboardScreen() {
         <Ionicons name="information-circle-outline" size={16} color={colors.textTertiary} />
         <Text style={[font.caption, { flex: 1 }]}>{reportsSub === 'therapist' ? 'Observations redigees par ton therapeute.' : 'Syntheses generees automatiquement par l\'IA.'}</Text>
       </View>
+    </View>
+  );
+
+  const renderReports = () => (
+    <View style={s.tabContent}>
       {reportsSub === 'therapist' ? (
-        therapistReports.length === 0 ? <EmptyState icon="document-text-outline" title="Aucun constat" subtitle="Apres vos seances" /> : <View style={s.cardList}>{therapistReports.map((r) => <ReportCard key={r._id} content={r.content} date={fmtDate(r.date)} from={r.from} />)}</View>
+        therapistReports.length === 0 ? (
+          <EmptyState icon="document-text-outline" title="Aucun constat" subtitle="Apres vos seances" />
+        ) : (
+          <View style={s.cardList}>
+            {therapistReports.map((r) => (
+              <ReportCard key={r._id} content={r.content} date={fmtDate(r.date)} from={r.from} />
+            ))}
+          </View>
+        )
       ) : (
         <>
-          {lastSummary && <SectionCard icon="sparkles" iconColor={colors.ai} variant="elevated"><Text style={[font.label, { color: colors.ai }]}>Derniere synthese</Text><Text style={font.bodySmall}>{lastSummary}</Text></SectionCard>}
-          {aiReports.length === 0 && !lastSummary ? <EmptyState icon="sparkles-outline" title="Aucune synthese" subtitle="Apres tes echanges" /> : <View style={s.cardList}>{aiReports.map((r) => <ReportCard key={r._id} content={r.content} date={fmtDate(r.date)} from={r.from} />)}</View>}
+          {lastSummary && (
+            <SectionCard icon="sparkles" iconColor={colors.ai} variant="elevated">
+              <Text style={[font.label, { color: colors.ai }]}>Derniere synthese</Text>
+              <Text style={font.bodySmall}>{lastSummary}</Text>
+            </SectionCard>
+          )}
+          {aiReports.length === 0 && !lastSummary ? (
+            <EmptyState icon="sparkles-outline" title="Aucune synthese" subtitle="Apres tes echanges" />
+          ) : (
+            <View style={s.cardList}>
+              {aiReports.map((r) => (
+                <ReportCard key={r._id} content={r.content} date={fmtDate(r.date)} from={r.from} />
+              ))}
+            </View>
+          )}
         </>
       )}
     </View>
@@ -322,6 +348,7 @@ export default function PatientDashboardScreen() {
         </View>
         <View style={s.desktopMain}>
           <View style={s.desktopContentHeader}><Text style={font.title}>{currentSection.title}</Text><Text style={[font.bodySmall, { marginTop: 2 }]}>{currentSection.desc}</Text></View>
+          {activeTab === 'reports' && renderReportsStickyHeader()}
           <ScrollView contentContainerStyle={s.desktopScroll} showsVerticalScrollIndicator={false}>{renderContent()}</ScrollView>
         </View>
       </View>
@@ -329,10 +356,23 @@ export default function PatientDashboardScreen() {
   }
 
   return (
-    <PageLayout title={currentSection.title} subtitle={`Bonjour ${patientName || 'toi'}`} headerRight={headerRight}
-      stickyContent={<View style={s.mobileDesc}><Ionicons name={currentSection.icon} size={16} color={colors.primary} /><Text style={[font.caption, { flex: 1 }]}>{currentSection.desc}</Text></View>}
+    <PageLayout
+      title={currentSection.title}
+      subtitle={`Bonjour ${patientName || 'toi'}`}
+      headerRight={headerRight}
+      stickyContent={(
+        <View>
+          <View style={s.mobileDesc}>
+            <Ionicons name={currentSection.icon} size={16} color={colors.primary} />
+            <Text style={[font.caption, { flex: 1 }]}>{currentSection.desc}</Text>
+          </View>
+          {activeTab === 'reports' && renderReportsStickyHeader()}
+        </View>
+      )}
       bottomContent={<BottomTabBar tabs={BOTTOM_TABS} activeKey={activeTab} onChange={setActiveTab} />}
-    >{renderContent()}</PageLayout>
+    >
+      {renderContent()}
+    </PageLayout>
   );
 }
 
@@ -399,6 +439,7 @@ const s = StyleSheet.create({
   timelineHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
 
   // Reports
+  reportsStickyHeader: { paddingHorizontal: layout.pagePadding, paddingTop: spacing.lg, paddingBottom: spacing.md, backgroundColor: colors.bg, gap: spacing.sm },
   subTabRow: { flexDirection: 'row', gap: spacing.sm },
   subTab: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm, paddingVertical: spacing.md, borderRadius: radius.lg, backgroundColor: colors.bgSecondary, borderWidth: 1.5, borderColor: colors.borderLight },
   subTabActive: { backgroundColor: colors.primaryLight, borderColor: colors.primaryMedium },
