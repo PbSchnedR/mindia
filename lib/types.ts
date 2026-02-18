@@ -11,6 +11,11 @@ export type Session =
       role: 'therapist';
       therapistId: string;
       email: string;
+    }
+  | {
+      role: 'admin';
+      adminId: string;
+      email: string;
     };
 
 export type Severity = 1 | 2 | 3;
@@ -22,6 +27,8 @@ export type ChatMessage = {
   author: ChatAuthor;
   text: string;
   createdAt: string; // ISO
+  crisisLevel?: number | null; // 0=normal, 1=léger, 2=modéré, 3=critique
+  crisisReason?: string | null;
 };
 
 export type ChatSession = {

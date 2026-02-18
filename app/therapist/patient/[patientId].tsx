@@ -2,11 +2,12 @@ import { useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ScrollView, StyleSheet, View, TextInput, Modal, Alert, Text,
-  Pressable, Platform, FlatList,
+  Pressable, Platform, FlatList, Dimensions, ActivityIndicator,
 } from 'react-native';
 import { Image } from 'expo-image';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
+import { LineChart } from 'react-native-chart-kit';
 
 import { Button } from '@/components/ui/button';
 import { PageLayout, HeaderIconButton } from '@/components/ui/page-layout';
@@ -29,16 +30,19 @@ const BOTTOM_TABS: TabItem[] = [
   { key: 'overview', label: 'Apercu', icon: 'grid-outline', iconActive: 'grid' },
   { key: 'reports', label: 'Constats', icon: 'document-text-outline', iconActive: 'document-text' },
   { key: 'discussion', label: 'Discussion', icon: 'chatbubbles-outline', iconActive: 'chatbubbles' },
+  { key: 'progress', label: 'Progression', icon: 'trending-up-outline', iconActive: 'trending-up' },
 ];
 const DESKTOP_NAV = [
   { key: 'overview', label: 'Apercu', icon: 'grid-outline' as const, iconActive: 'grid' as const, desc: 'Vue d\'ensemble du patient' },
   { key: 'reports', label: 'Constats', icon: 'document-text-outline' as const, iconActive: 'document-text' as const, desc: 'Observations & syntheses IA' },
   { key: 'discussion', label: 'Discussion', icon: 'chatbubbles-outline' as const, iconActive: 'chatbubbles' as const, desc: 'Echanger avec le patient' },
+  { key: 'progress', label: 'Progression', icon: 'trending-up-outline' as const, iconActive: 'trending-up' as const, desc: 'Evolution et statistiques du patient' },
 ];
 const SECTION_DESCS: Record<string, { title: string; desc: string }> = {
   overview: { title: 'Apercu', desc: 'QR code, humeur actuelle, dernier message et informations du patient.' },
   reports: { title: 'Constats & Syntheses', desc: 'Vos observations cliniques et les syntheses automatiques de l\'IA.' },
   discussion: { title: 'Discussion', desc: 'Echangez en direct avec votre patient.' },
+  progress: { title: 'Progression', desc: 'Evolution de l\'humeur et statistiques du patient.' },
 };
 
 const MOOD_MAP: Record<string, { icon: keyof typeof Ionicons.glyphMap; label: string; color: string; bg: string }> = {
@@ -71,9 +75,26 @@ export default function TherapistPatientDetailScreen() {
   const [ocrLoading, setOcrLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<string>('overview');
   const [reportsSub, setReportsSub] = useState<'therapist' | 'ai'>('therapist');
+  const [generatingAiReport, setGeneratingAiReport] = useState(false);
   const [conversations, setConversations] = useState<{ id: string; createdAt: string; lastMessage?: any }[]>([]);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const chatScrollRef = useRef<ScrollView>(null);
+
+  // Feature 3: Recommended actions
+  const [actions, setActions] = useState<any[]>([]);
+  const [showActionForm, setShowActionForm] = useState(false);
+  const [newAction, setNewAction] = useState({ title: '', description: '', type: 'custom', url: '' });
+  const [savingAction, setSavingAction] = useState(false);
+
+  // Progression tab data
+  const [journalEntries, setJournalEntries] = useState<any[]>([]);
+  const [crisisEvals, setCrisisEvals] = useState<any[]>([]);
+
+  // Feature 7: Editable therapy info
+  const [editingInfo, setEditingInfo] = useState(false);
+  const [editTherapyTopic, setEditTherapyTopic] = useState('');
+  const [editSessionsDone, setEditSessionsDone] = useState('');
+  const [savingInfo, setSavingInfo] = useState(false);
 
   const patientId = useMemo(() => { const raw = params.patientId; return Array.isArray(raw) ? raw[0] : raw; }, [params.patientId]);
 
@@ -96,8 +117,13 @@ export default function TherapistPatientDetailScreen() {
         setMagicToken(token || ''); setTokenExpiresIn(expiresIn || '24h');
         const p = await getPatientById(patientId);
         setPatient(p ?? null);
+        setEditTherapyTopic(user.therapyTopic || p?.reason || '');
+        setEditSessionsDone(String(user.sessionsDone ?? p?.sessionCount ?? 0));
         const { reports: reps } = await api.reports.get(patientId);
         setReports(reps || []);
+        try { const { actions: acts } = await api.actions.get(patientId); setActions(acts || []); } catch {}
+        try { const { entries } = await api.journal.get(patientId); setJournalEntries(entries || []); } catch {}
+        try { const { evaluations } = await api.crisisEval.get(patientId); setCrisisEvals(evaluations || []); } catch {}
       } catch (e) { console.error(e); setError('Impossible de charger les informations du patient.'); }
       finally { setLoading(false); }
     })();
@@ -137,10 +163,60 @@ export default function TherapistPatientDetailScreen() {
     finally { setOcrLoading(false); }
   };
 
+  const [aiReportError, setAiReportError] = useState<string | null>(null);
+  const [aiReportSuccess, setAiReportSuccess] = useState(false);
+
+  const handleGenerateAiReport = async () => {
+    if (!patientId) return;
+    setGeneratingAiReport(true);
+    setAiReportError(null);
+    setAiReportSuccess(false);
+    try {
+      const { report } = await api.ai.generateReport(patientId);
+      setReports((prev) => [report, ...prev]);
+      setReportsSub('ai');
+      setAiReportSuccess(true);
+      setTimeout(() => setAiReportSuccess(false), 4000);
+    } catch (e: any) {
+      setAiReportError(e?.message || 'Impossible de générer le constat IA');
+      setTimeout(() => setAiReportError(null), 5000);
+    } finally { setGeneratingAiReport(false); }
+  };
+
   const handleSelectConversation = async (id: string) => {
     if (!patient || id === conversationId) return;
     setConversationId(id);
     try { const { messages: msgs } = await api.conversations.getMessages(patient.id, id); setMessages(msgs || []); } catch { Alert.alert('Erreur', 'Impossible de charger.'); }
+  };
+
+  const handleAddAction = async () => {
+    if (!patientId || !newAction.title.trim()) return;
+    setSavingAction(true);
+    try {
+      const updated = [...actions, { title: newAction.title.trim(), description: newAction.description.trim(), type: newAction.type, url: newAction.url.trim() || null }];
+      await api.actions.set(patientId, updated);
+      setActions(updated);
+      setNewAction({ title: '', description: '', type: 'custom', url: '' });
+      setShowActionForm(false);
+    } catch { Alert.alert('Erreur', 'Impossible d\'ajouter.'); }
+    finally { setSavingAction(false); }
+  };
+
+  const handleDeleteAction = async (index: number) => {
+    if (!patientId) return;
+    const updated = actions.filter((_, i) => i !== index);
+    try { await api.actions.set(patientId, updated); setActions(updated); }
+    catch { Alert.alert('Erreur', 'Impossible de supprimer.'); }
+  };
+
+  const handleSaveTherapyInfo = async () => {
+    if (!patientId) return;
+    setSavingInfo(true);
+    try {
+      await api.users.update(patientId, { therapyTopic: editTherapyTopic.trim(), sessionsDone: parseInt(editSessionsDone) || 0 } as any);
+      setEditingInfo(false);
+    } catch { Alert.alert('Erreur', 'Impossible de sauvegarder.'); }
+    finally { setSavingInfo(false); }
   };
 
   const aiReports = reports.filter((r) => r.from === 'ai');
@@ -195,18 +271,96 @@ export default function TherapistPatientDetailScreen() {
                 </View>
                   </View>
 
-      {/* Patient info */}
+      {/* Patient info (editable) */}
       <View style={s.overviewCard}>
-        <View style={s.overviewCardHeader}>
-          <Ionicons name="person" size={18} color={colors.primary} />
-          <Text style={font.sectionTitle}>Informations patient</Text>
-                      </View>
+        <View style={[s.overviewCardHeader, { justifyContent: 'space-between' }]}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+            <Ionicons name="person" size={18} color={colors.primary} />
+            <Text style={font.sectionTitle}>Informations patient</Text>
+          </View>
+          {!editingInfo ? (
+            <Pressable onPress={() => setEditingInfo(true)} style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs, paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: radius.full, backgroundColor: colors.primaryLight }}>
+              <Ionicons name="create-outline" size={14} color={colors.primary} />
+              <Text style={[font.caption, { color: colors.primary }]}>Modifier</Text>
+            </Pressable>
+          ) : null}
+        </View>
         <View style={s.infoGrid}>
           <View style={s.infoItem}><Ionicons name="mail-outline" size={16} color={colors.textTertiary} /><View><Text style={font.caption}>Email</Text><Text style={font.bodyMedium}>{patientEmail || '--'}</Text></View></View>
-          <View style={s.infoItem}><Ionicons name="bookmark-outline" size={16} color={colors.textTertiary} /><View><Text style={font.caption}>Sujet</Text><Text style={font.bodyMedium}>{patient.reason || 'Non precise'}</Text></View></View>
-          <View style={s.infoItem}><Ionicons name="calendar-outline" size={16} color={colors.textTertiary} /><View><Text style={font.caption}>Seances</Text><Text style={font.bodyMedium}>{patient.sessionCount ?? '--'}</Text></View></View>
-                            </View>
-                          </View>
+          {editingInfo ? (
+            <>
+              <View style={s.infoItem}><Ionicons name="bookmark-outline" size={16} color={colors.textTertiary} />
+                <View style={{ flex: 1 }}><Text style={font.caption}>Sujet de therapie</Text>
+                  <TextInput value={editTherapyTopic} onChangeText={setEditTherapyTopic} placeholder="Sujet..." placeholderTextColor={colors.textTertiary} style={[s.editInput]} />
+                </View>
+              </View>
+              <View style={s.infoItem}><Ionicons name="calendar-outline" size={16} color={colors.textTertiary} />
+                <View style={{ flex: 1 }}><Text style={font.caption}>Nombre de seances</Text>
+                  <TextInput value={editSessionsDone} onChangeText={setEditSessionsDone} placeholder="0" placeholderTextColor={colors.textTertiary} keyboardType="numeric" style={[s.editInput]} />
+                </View>
+              </View>
+              <View style={{ flexDirection: 'row', gap: spacing.md }}>
+                <Button title="Annuler" variant="ghost" size="sm" onPress={() => setEditingInfo(false)} />
+                <Button title="Enregistrer" size="sm" onPress={handleSaveTherapyInfo} loading={savingInfo} />
+              </View>
+            </>
+          ) : (
+            <>
+              <View style={s.infoItem}><Ionicons name="bookmark-outline" size={16} color={colors.textTertiary} /><View><Text style={font.caption}>Sujet</Text><Text style={font.bodyMedium}>{editTherapyTopic || 'Non precise'}</Text></View></View>
+              <View style={s.infoItem}><Ionicons name="calendar-outline" size={16} color={colors.textTertiary} /><View><Text style={font.caption}>Seances</Text><Text style={font.bodyMedium}>{editSessionsDone || '--'}</Text></View></View>
+            </>
+          )}
+        </View>
+      </View>
+
+      {/* Recommended Actions */}
+      <View style={s.overviewCard}>
+        <View style={[s.overviewCardHeader, { justifyContent: 'space-between' }]}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+            <Ionicons name="bulb" size={18} color={colors.warning} />
+            <Text style={font.sectionTitle}>Actions recommandees</Text>
+          </View>
+          <Pressable onPress={() => setShowActionForm(!showActionForm)} style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs, paddingHorizontal: spacing.md, paddingVertical: spacing.xs, borderRadius: radius.full, backgroundColor: colors.primaryLight }}>
+            <Ionicons name={showActionForm ? 'close' : 'add'} size={14} color={colors.primary} />
+            <Text style={[font.caption, { color: colors.primary }]}>{showActionForm ? 'Annuler' : 'Ajouter'}</Text>
+          </Pressable>
+        </View>
+
+        {showActionForm && (
+          <View style={{ gap: spacing.md, padding: spacing.lg, backgroundColor: colors.bgSecondary, borderRadius: radius.lg }}>
+            <TextInput placeholder="Titre *" placeholderTextColor={colors.textTertiary} value={newAction.title} onChangeText={(t) => setNewAction(a => ({ ...a, title: t }))} style={s.editInput} />
+            <TextInput placeholder="Description" placeholderTextColor={colors.textTertiary} value={newAction.description} onChangeText={(t) => setNewAction(a => ({ ...a, description: t }))} style={s.editInput} multiline />
+            <View style={{ flexDirection: 'row', gap: spacing.sm, flexWrap: 'wrap' }}>
+              {(['exercise', 'contact', 'media', 'custom'] as const).map((t) => (
+                <Pressable key={t} onPress={() => setNewAction(a => ({ ...a, type: t }))} style={[s.typeChip, newAction.type === t && s.typeChipActive]}>
+                  <Text style={[font.caption, newAction.type === t && { color: colors.textOnPrimary }]}>{t === 'exercise' ? 'Exercice' : t === 'contact' ? 'Contact' : t === 'media' ? 'Media' : 'Autre'}</Text>
+                </Pressable>
+              ))}
+            </View>
+            <TextInput placeholder="URL (optionnel)" placeholderTextColor={colors.textTertiary} value={newAction.url} onChangeText={(t) => setNewAction(a => ({ ...a, url: t }))} style={s.editInput} autoCapitalize="none" keyboardType="url" />
+            <Button title="Ajouter l'action" size="sm" onPress={handleAddAction} loading={savingAction} disabled={!newAction.title.trim()} />
+          </View>
+        )}
+
+        {actions.length === 0 && !showActionForm ? (
+          <Text style={font.caption}>Aucune action recommandee</Text>
+        ) : (
+          <View style={{ gap: spacing.sm }}>
+            {actions.map((action: any, i: number) => (
+              <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: spacing.sm }}>
+                <Ionicons name={action.type === 'exercise' ? 'fitness' : action.type === 'contact' ? 'call' : action.type === 'media' ? 'musical-notes' : 'bulb'} size={18} color={colors.primary} />
+                <View style={{ flex: 1 }}>
+                  <Text style={font.bodyMedium}>{action.title}</Text>
+                  {action.description ? <Text style={font.caption}>{action.description}</Text> : null}
+                </View>
+                <Pressable onPress={() => handleDeleteAction(i)} style={{ padding: spacing.sm }}>
+                  <Ionicons name="trash-outline" size={16} color={colors.error} />
+                </Pressable>
+              </View>
+            ))}
+          </View>
+        )}
+      </View>
 
       {/* QR Code - compact */}
       <View style={[s.overviewCard, { alignItems: 'center' }]}>
@@ -258,27 +412,72 @@ export default function TherapistPatientDetailScreen() {
       {reportsSub === 'therapist' ? (
         therapistReports.length === 0 ? <EmptyState icon="document-text-outline" title="Aucun constat" subtitle="Ajoutez vos observations" /> : <View style={s.cardList}>{therapistReports.map((r) => <ReportCard key={r._id} content={r.content} date={fmtDate(r.date)} from={r.from} />)}</View>
       ) : (
-        aiReports.length === 0 ? <EmptyState icon="sparkles-outline" title="Aucun constat IA" subtitle="Apres les echanges du patient" /> : <View style={s.cardList}>{aiReports.map((r) => <ReportCard key={r._id} content={r.content} date={fmtDate(r.date)} from={r.from} />)}</View>
-                    )}
-                  </View>
+        <View style={{ gap: spacing.lg }}>
+          <Button
+            title={generatingAiReport ? 'Analyse en cours...' : 'Générer un constat IA'}
+            icon="sparkles"
+            variant="soft"
+            onPress={handleGenerateAiReport}
+            loading={generatingAiReport}
+            disabled={conversations.length === 0 || generatingAiReport}
+          />
+          {generatingAiReport && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md, padding: spacing.lg, backgroundColor: colors.aiLight, borderRadius: radius.lg }}>
+              <ActivityIndicator size="small" color={colors.ai} />
+              <Text style={[font.bodySmall, { color: colors.ai, flex: 1 }]}>L'IA analyse l'ensemble des conversations du patient... Cela peut prendre quelques secondes.</Text>
+            </View>
+          )}
+          {aiReportSuccess && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, padding: spacing.md, backgroundColor: colors.successLight, borderRadius: radius.lg }}>
+              <Ionicons name="checkmark-circle" size={18} color={colors.success} />
+              <Text style={[font.bodySmall, { color: colors.success }]}>Constat IA genere avec succes</Text>
+            </View>
+          )}
+          {aiReportError && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, padding: spacing.md, backgroundColor: colors.errorLight, borderRadius: radius.lg }}>
+              <Ionicons name="alert-circle" size={18} color={colors.error} />
+              <Text style={[font.bodySmall, { color: colors.error }]}>{aiReportError}</Text>
+            </View>
+          )}
+          {conversations.length === 0 && <Text style={font.caption}>Aucune conversation à analyser</Text>}
+          {aiReports.length === 0 && !generatingAiReport ? (
+            <EmptyState icon="sparkles-outline" title="Aucun constat IA" subtitle="Générez un constat à partir des discussions du patient" />
+          ) : (
+            <View style={s.cardList}>{aiReports.map((r) => <ReportCard key={r._id} content={r.content} date={fmtDate(r.date)} from={r.from} />)}</View>
+          )}
+        </View>
+      )}
+    </View>
   );
 
   // ── Discussion Tab (Chat-like interface) ───────────────
   const renderDiscussion = () => (
     <View style={s.chatContainer}>
-      {/* Conversation selector */}
+      {/* Conversation selector with mood indicators */}
       {conversations.length > 1 && (
         <View style={s.convSelector}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: spacing.sm, paddingHorizontal: spacing.md }}>
-            {conversations.map((c) => (
-              <Pressable key={c.id} onPress={() => handleSelectConversation(c.id)} style={[s.convChip, c.id === conversationId && s.convChipActive]}>
-                <Text style={[s.convChipText, c.id === conversationId && s.convChipTextActive]}>
-                  {new Date(c.createdAt).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })}
+            {conversations.map((c: any) => {
+              const maxCrisis = c.maxCrisisLevel || 0;
+              const moodIcon = maxCrisis >= 3 ? 'alert-circle' : maxCrisis >= 2 ? 'warning' : maxCrisis >= 1 ? 'information-circle' : 'happy';
+              const moodColor = maxCrisis >= 3 ? colors.error : maxCrisis >= 2 ? colors.warning : maxCrisis >= 1 ? '#F59E0B' : colors.success;
+              const isActive = c.id === conversationId;
+              return (
+                <Pressable key={c.id} onPress={() => handleSelectConversation(c.id)} style={[s.convChip, isActive && s.convChipActive]}>
+                  <Ionicons name={moodIcon as any} size={14} color={isActive ? colors.textOnPrimary : moodColor} />
+                  <Text style={[s.convChipText, isActive && s.convChipTextActive]}>
+                    {new Date(c.createdAt).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short' })}
                   </Text>
+                  {c.messageCount > 0 && (
+                    <Text style={[{ fontSize: 10, color: isActive ? 'rgba(255,255,255,0.7)' : colors.textTertiary }]}>
+                      ({c.messageCount})
+                    </Text>
+                  )}
                 </Pressable>
-            ))}
+              );
+            })}
           </ScrollView>
-              </View>
+        </View>
       )}
 
       {/* Messages area */}
@@ -298,21 +497,39 @@ export default function TherapistPatientDetailScreen() {
           const isTherapist = msg.from === 'therapist';
           const isPatientMsg = msg.from === 'patient';
           const isAI = msg.from === 'ai';
+          const crisis = msg.crisisLevel;
+          const crisisData = crisis === 3 ? { icon: 'alert-circle' as const, color: colors.error, bg: colors.errorLight, label: 'Critique' }
+            : crisis === 2 ? { icon: 'warning' as const, color: colors.warning, bg: colors.warningLight, label: 'Modéré' }
+            : crisis === 1 ? { icon: 'information-circle' as const, color: '#F59E0B', bg: '#FFFBEB', label: 'Léger' }
+            : null;
           return (
             <View key={i} style={[s.chatBubbleRow, isTherapist && s.chatBubbleRowRight]}>
               {!isTherapist && (
                 <View style={[s.chatAvatar, { backgroundColor: isPatientMsg ? colors.primaryLight : colors.aiLight }]}>
                   <Ionicons name={isPatientMsg ? 'person' : 'sparkles'} size={14} color={isPatientMsg ? colors.primary : colors.ai} />
-                        </View>
+                </View>
               )}
-              <View style={[s.chatBubble, isTherapist ? s.chatBubbleTherapist : isAI ? s.chatBubbleAI : s.chatBubblePatient]}>
-                <Text style={[s.chatSender, { color: isTherapist ? '#FFFFFF' : isAI ? colors.ai : colors.primary }]}>
-                  {isTherapist ? 'Vous' : isAI ? 'IA' : 'Patient'}
-                          </Text>
-                <Text style={[font.bodySmall, isTherapist && { color: colors.textOnPrimary }]}>{msg.text}</Text>
-                <Text style={[s.chatTime, isTherapist && { color: 'rgba(255,255,255,0.7)' }]}>{fmtDate(msg.createdAt || msg.date)}</Text>
+              <View style={{ flex: 1, maxWidth: '75%' }}>
+                <View style={[s.chatBubble, isTherapist ? s.chatBubbleTherapist : isAI ? s.chatBubbleAI : s.chatBubblePatient]}>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <Text style={[s.chatSender, { color: isTherapist ? '#FFFFFF' : isAI ? colors.ai : colors.primary }]}>
+                      {isTherapist ? 'Vous' : isAI ? 'IA' : 'Patient'}
+                    </Text>
+                    {crisisData && (
+                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: crisisData.bg, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 999 }}>
+                        <Ionicons name={crisisData.icon} size={12} color={crisisData.color} />
+                        <Text style={{ fontSize: 10, fontWeight: '700', color: crisisData.color }}>{crisisData.label}</Text>
+                      </View>
+                    )}
+                  </View>
+                  <Text style={[font.bodySmall, isTherapist && { color: colors.textOnPrimary }]}>{msg.text}</Text>
+                  {crisisData && msg.crisisReason ? (
+                    <Text style={{ fontSize: 11, color: crisisData.color, fontStyle: 'italic', marginTop: 2 }}>{msg.crisisReason}</Text>
+                  ) : null}
+                  <Text style={[s.chatTime, isTherapist && { color: 'rgba(255,255,255,0.7)' }]}>{fmtDate(msg.createdAt || msg.date)}</Text>
                 </View>
               </View>
+            </View>
           );
         })}
       </ScrollView>
@@ -335,7 +552,139 @@ export default function TherapistPatientDetailScreen() {
                 </View>
   );
 
-  const renderContent = () => { switch (activeTab) { case 'overview': return renderOverview(); case 'reports': return renderReports(); case 'discussion': return renderDiscussion(); default: return renderOverview(); } };
+  // ── Progression Tab ────────────────────────────────────
+  const PROGRESS_MOODS = [
+    { value: 1, label: 'Tres mal', color: colors.error },
+    { value: 2, label: 'Mal', color: colors.warning },
+    { value: 3, label: 'Moyen', color: colors.textTertiary },
+    { value: 4, label: 'Bien', color: colors.success },
+    { value: 5, label: 'Tres bien', color: '#F59E0B' },
+  ];
+
+  const renderProgress = () => {
+    const recentMoods = journalEntries.slice(0, 14).reverse();
+    const chartWidth = isDesktop ? 500 : Dimensions.get('window').width - 80;
+
+    return (
+      <View style={s.tabContent}>
+        {/* Stats */}
+        <View style={isDesktop ? { flexDirection: 'row', gap: spacing.xl } : { gap: spacing.xl }}>
+          <View style={[s.overviewCard, isDesktop && { flex: 1 }]}>
+            <View style={{ alignItems: 'center', gap: spacing.sm }}>
+              <Ionicons name="book" size={28} color={colors.primary} />
+              <Text style={font.subtitle}>{journalEntries.length}</Text>
+              <Text style={font.caption}>Entrees journal</Text>
+            </View>
+          </View>
+          <View style={[s.overviewCard, isDesktop && { flex: 1 }]}>
+            <View style={{ alignItems: 'center', gap: spacing.sm }}>
+              <Ionicons name="chatbubbles" size={28} color={colors.ai} />
+              <Text style={font.subtitle}>{conversations.length}</Text>
+              <Text style={font.caption}>Conversations</Text>
+            </View>
+          </View>
+          <View style={[s.overviewCard, isDesktop && { flex: 1 }]}>
+            <View style={{ alignItems: 'center', gap: spacing.sm }}>
+              <Ionicons name="document-text" size={28} color={colors.warning} />
+              <Text style={font.subtitle}>{reports.length}</Text>
+              <Text style={font.caption}>Constats</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Mood chart */}
+        <View style={s.overviewCard}>
+          <View style={s.overviewCardHeader}>
+            <Ionicons name="analytics" size={18} color={colors.primary} />
+            <Text style={font.sectionTitle}>Evolution de l'humeur</Text>
+          </View>
+          {recentMoods.length < 2 ? (
+            <Text style={font.caption}>Pas assez de donnees journal (min. 2 entrees)</Text>
+          ) : (
+            <View style={{ gap: spacing.md }}>
+              <LineChart
+                data={{
+                  labels: recentMoods.map((e: any) => {
+                    const d = new Date(e.date);
+                    return `${d.getDate()}/${d.getMonth() + 1}`;
+                  }),
+                  datasets: [{
+                    data: recentMoods.map((e: any) => e.mood || 3),
+                    color: () => colors.primary,
+                    strokeWidth: 2.5,
+                  }],
+                }}
+                width={chartWidth}
+                height={200}
+                yAxisSuffix=""
+                yAxisInterval={1}
+                fromZero={false}
+                segments={4}
+                chartConfig={{
+                  backgroundColor: colors.bg,
+                  backgroundGradientFrom: colors.bg,
+                  backgroundGradientTo: colors.bg,
+                  decimalPlaces: 0,
+                  color: (opacity = 1) => `rgba(99, 102, 241, ${opacity})`,
+                  labelColor: () => colors.textTertiary,
+                  propsForDots: {
+                    r: '5',
+                    strokeWidth: '2',
+                    stroke: colors.primaryDark,
+                  },
+                  propsForBackgroundLines: {
+                    strokeDasharray: '4 4',
+                    stroke: colors.borderLight,
+                  },
+                  style: { borderRadius: radius.lg },
+                }}
+                bezier
+                style={{ borderRadius: radius.lg, marginLeft: -spacing.lg }}
+                withInnerLines
+                withOuterLines={false}
+              />
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md, justifyContent: 'center' }}>
+                {PROGRESS_MOODS.map((m) => (
+                  <View key={m.value} style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                    <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: m.color }} />
+                    <Text style={{ fontSize: 10, color: colors.textTertiary }}>{m.label}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          )}
+        </View>
+
+        {/* Crisis history */}
+        <View style={s.overviewCard}>
+          <View style={s.overviewCardHeader}>
+            <Ionicons name="alert-circle" size={18} color={colors.error} />
+            <Text style={font.sectionTitle}>Historique des crises</Text>
+          </View>
+          {crisisEvals.length === 0 ? (
+            <Text style={font.caption}>Aucune evaluation de crise</Text>
+          ) : (
+            <View style={{ gap: spacing.md }}>
+              {crisisEvals.slice(0, 10).map((ev: any, i: number) => (
+                <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: spacing.sm }}>
+                  <View style={{ width: 36, height: 36, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', backgroundColor: ev.level >= 2 ? colors.errorLight : ev.level >= 1 ? colors.warningLight : colors.successLight }}>
+                    <Ionicons name={ev.level >= 2 ? 'warning' : ev.level >= 1 ? 'alert-circle' : 'checkmark-circle'} size={18} color={ev.level >= 2 ? colors.error : ev.level >= 1 ? colors.warning : colors.success} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={font.bodyMedium}>Niveau {ev.level}/3{ev.flagged ? ' — Signale' : ''}</Text>
+                    {ev.summary ? <Text style={font.caption} numberOfLines={2}>{ev.summary}</Text> : null}
+                    <Text style={font.caption}>{fmtDate(ev.date)}</Text>
+                  </View>
+                </View>
+              ))}
+            </View>
+          )}
+        </View>
+      </View>
+    );
+  };
+
+  const renderContent = () => { switch (activeTab) { case 'overview': return renderOverview(); case 'reports': return renderReports(); case 'discussion': return renderDiscussion(); case 'progress': return renderProgress(); default: return renderOverview(); } };
 
   // ── Modals ────────────────────────────────────────────
   const renderModals = () => (
@@ -474,7 +823,7 @@ const s = StyleSheet.create({
   // Chat interface
   chatContainer: { flex: 1, backgroundColor: colors.bgSecondary },
   convSelector: { paddingVertical: spacing.sm, borderBottomWidth: 1, borderBottomColor: colors.borderLight, backgroundColor: colors.bg },
-  convChip: { paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, borderRadius: radius.full, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.bg },
+  convChip: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, paddingHorizontal: spacing.lg, paddingVertical: spacing.sm, borderRadius: radius.full, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.bg },
   convChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   convChipText: { fontSize: 13, fontWeight: '500', color: colors.textSecondary },
   convChipTextActive: { color: colors.textOnPrimary, fontWeight: '600' },
@@ -505,4 +854,9 @@ const s = StyleSheet.create({
   modalBody: { paddingHorizontal: spacing['2xl'], maxHeight: 400 },
   modalInput: { backgroundColor: colors.bgSecondary, borderRadius: radius.lg, padding: spacing.lg, fontSize: 15, color: colors.text, borderWidth: 1.5, borderColor: colors.border, minHeight: 140 },
   modalFooter: { flexDirection: 'row', gap: spacing.md, paddingHorizontal: spacing['2xl'], paddingVertical: spacing.xl, borderTopWidth: 1, borderTopColor: colors.borderLight },
+
+  // Editable info & actions
+  editInput: { backgroundColor: colors.bg, borderRadius: radius.md, padding: spacing.md, fontSize: 14, color: colors.text, borderWidth: 1, borderColor: colors.border },
+  typeChip: { paddingHorizontal: spacing.md, paddingVertical: spacing.xs + 2, borderRadius: radius.full, backgroundColor: colors.bgTertiary, borderWidth: 1, borderColor: colors.border },
+  typeChipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
 });

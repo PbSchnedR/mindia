@@ -33,6 +33,7 @@ export default function LandingScreen() {
   const [therapistEmail, setTherapistEmail] = useState('');
   const [therapistPassword, setTherapistPassword] = useState('');
   const [therapistLoading, setTherapistLoading] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
 
   const slideAnim = useRef(new Animated.Value(0)).current;
   const [toggleWidth, setToggleWidth] = useState(0);
@@ -60,46 +61,48 @@ export default function LandingScreen() {
     if (sessionLoading || hasRedirected.current) return;
     if (session) {
       hasRedirected.current = true;
-      const dest = session.role === 'therapist' ? '/therapist/dashboard' : '/patient/dashboard';
+      const dest = session.role === 'therapist' ? '/therapist/dashboard' : session.role === 'admin' ? '/admin/dashboard' : '/patient/dashboard';
       router.replace(dest);
     }
   }, [session, sessionLoading]);
 
   function switchMode(m: Mode) {
-    setMode(m);
+    setMode(m); setLoginError(null);
     Animated.spring(slideAnim, { toValue: m === 'therapist' ? 1 : 0, useNativeDriver: true, damping: 18, stiffness: 180 }).start();
   }
 
   async function handleQRScan(data: string) {
-    setShowScanner(false); setIsLoading(true);
+    setShowScanner(false); setIsLoading(true); setLoginError(null);
     try {
       const token = data.trim();
-      if (!(await api.waitForBackend())) { Alert.alert('Erreur', "Serveur indisponible."); return; }
+      if (!(await api.waitForBackend())) { setLoginError("Serveur indisponible. Réessayez dans quelques instants."); return; }
       const result = await api.auth.loginWithToken(token);
       if (result) { await saveSession(result.session); setSession(result.session); }
-    } catch (error: any) { Alert.alert('QR Code invalide', error?.message || "QR code invalide."); }
+    } catch (error: any) { setLoginError(error?.message || "QR code invalide ou expiré."); }
     finally { setIsLoading(false); }
   }
 
   async function handlePatientAccess() {
-    if (!patientEmail.trim()) { Alert.alert('Email requis', 'Entre ton email patient.'); return; }
+    setLoginError(null);
+    if (!patientEmail.trim()) { setLoginError('Entre ton email patient.'); return; }
     try {
       setPatientLoading(true);
-      if (!(await api.waitForBackend())) { Alert.alert('Erreur', "Serveur indisponible."); return; }
+      if (!(await api.waitForBackend())) { setLoginError("Serveur indisponible. Réessayez dans quelques instants."); return; }
       const result = await api.auth.loginPatientByMagicToken(patientEmail.trim());
       await saveSession(result.session); setSession(result.session);
-    } catch (error: any) { Alert.alert('Connexion impossible', error?.message || 'Email invalide.'); }
+    } catch (error: any) { setLoginError(error?.message || 'Email invalide ou compte introuvable.'); }
     finally { setPatientLoading(false); }
   }
 
   async function handleTherapistLogin() {
-    if (!therapistEmail.trim() || !therapistPassword.trim()) { Alert.alert('Champs requis', "Email et mot de passe requis."); return; }
+    setLoginError(null);
+    if (!therapistEmail.trim() || !therapistPassword.trim()) { setLoginError("Email et mot de passe requis."); return; }
     try {
       setTherapistLoading(true);
-      if (!(await api.waitForBackend())) { Alert.alert('Erreur', "Serveur indisponible."); return; }
+      if (!(await api.waitForBackend())) { setLoginError("Serveur indisponible. Réessayez dans quelques instants."); return; }
       const result = await api.auth.login(therapistEmail.trim(), therapistPassword);
       await saveSession(result.session); setSession(result.session);
-    } catch (error: any) { Alert.alert('Connexion impossible', error?.message || 'Identifiants invalides.'); }
+    } catch (error: any) { setLoginError(error?.message || 'Identifiants invalides.'); }
     finally { setTherapistLoading(false); }
   }
 
@@ -168,6 +171,13 @@ export default function LandingScreen() {
           <TextField label="Email" placeholder="votre.email@exemple.com" value={therapistEmail} onChangeText={setTherapistEmail} autoCapitalize="none" keyboardType="email-address" icon="mail-outline" />
           <TextField label="Mot de passe" placeholder="••••••••" value={therapistPassword} onChangeText={setTherapistPassword} secureTextEntry icon="lock-closed-outline" />
           <Button title="Se connecter" icon="log-in-outline" onPress={handleTherapistLogin} loading={therapistLoading} size="lg" />
+        </View>
+      )}
+
+      {loginError && (
+        <View style={s.errorBanner}>
+          <Ionicons name="alert-circle" size={16} color={colors.error} />
+          <Text style={s.errorText}>{loginError}</Text>
         </View>
       )}
     </Animated.View>
@@ -308,4 +318,6 @@ const s = StyleSheet.create({
   orLine: { flex: 1, height: 1, backgroundColor: colors.border },
   orText: { paddingHorizontal: spacing.lg, ...font.caption, fontSize: 13 },
   footer: { ...font.caption, textAlign: 'center', marginTop: spacing.lg, lineHeight: 18 },
+  errorBanner: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, backgroundColor: colors.errorLight, paddingVertical: spacing.md, paddingHorizontal: spacing.lg, borderRadius: radius.md, borderWidth: 1, borderColor: 'rgba(239,68,68,0.2)' },
+  errorText: { flex: 1, fontSize: 14, fontWeight: '500', color: colors.error, lineHeight: 20 },
 });

@@ -19,6 +19,7 @@ export default function RootLayout() {
           <Stack.Screen name="therapist/index" />
           <Stack.Screen name="therapist/dashboard" />
           <Stack.Screen name="therapist/patient/[patientId]" />
+          <Stack.Screen name="admin/dashboard" />
         </Stack>
         <StatusBar style="auto" />
       </SessionProvider>

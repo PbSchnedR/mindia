@@ -94,6 +94,8 @@ export default function PatientChatScreen() {
       author: m.author ?? m.from,
       text: m.text,
       createdAt: m.createdAt || new Date().toISOString(),
+      crisisLevel: m.crisisLevel ?? null,
+      crisisReason: m.crisisReason ?? null,
     }));
 
   const buildConvItem = (conversation: any) => {
@@ -145,17 +147,30 @@ export default function PatientChatScreen() {
       await new Promise((r) => setTimeout(r, 800));
 
       let aiResponse = '';
+      let aiCrisisLevel: number | undefined;
+      let aiCrisisReason: string | undefined;
       try {
         const context = normalizedUpdated.slice(-12).map((m) => ({ from: m.author as any, text: m.text }));
-        const result = await api.ai.reply(context);
+        const result = await api.ai.reply(context) as any;
         aiResponse = result.reply;
+        aiCrisisLevel = result.crisisLevel;
+        aiCrisisReason = result.crisisReason;
       } catch {
         aiResponse = getMockAIResponse(text);
         setSendError('IA indisponible, réponse automatique.');
       }
 
-      const { messages: autoMessages } = await api.conversations.addMessage(session.patientId, conversationId, 'ai', aiResponse);
-      setMessages(normalize(mapMessages(autoMessages)));
+      // Stocker le crisisLevel sur le message patient (évaluation du dernier message)
+      if (aiCrisisLevel !== undefined) {
+        // Mettre à jour le message patient avec le niveau de crise
+        await api.conversations.addMessage(session.patientId, conversationId, 'ai', aiResponse, { crisisLevel: aiCrisisLevel, crisisReason: aiCrisisReason }).catch(() => {});
+        // Recharger pour avoir les messages à jour
+        const { messages: reloaded } = await api.conversations.getMessages(session.patientId, conversationId);
+        setMessages(normalize(mapMessages(reloaded)));
+      } else {
+        const { messages: autoMessages } = await api.conversations.addMessage(session.patientId, conversationId, 'ai', aiResponse);
+        setMessages(normalize(mapMessages(autoMessages)));
+      }
       setSendStatus('idle');
     } catch (e) {
       console.error(e);

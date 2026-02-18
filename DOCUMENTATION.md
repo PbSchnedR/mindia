@@ -96,9 +96,8 @@ VScode/
 
 | Technologie | Justification |
 |-------------|--------------|
-| **React Native + Expo (SDK 54)** | Permet de deployer une seule base de code sur iOS, Android et Web. Expo simplifie le build, le deploiement OTA et l'acces aux APIs natives (camera, stockage). Le SDK 54 offre les dernieres optimisations React 19. |
+| **React Native + Expo (SDK 54)** | Permet de deployer une seule base de code sur iOS, Android et Web. Expo simplifie le build et l'acces aux APIs natives (camera, stockage). |
 | **Expo Router v6** | Routing file-based inspire de Next.js, natif pour Expo. Simplifie la navigation, le deep-linking et le code-splitting. Les layouts imbriques permettent de gerer les sous-navigations complexes (tabs patient, detail therapeute). |
-| **TypeScript** | Typage statique qui reduit les bugs, ameliore l'autocompletion et documente le code. Essentiel pour un projet sante ou la fiabilite est critique. |
 | **NativeWind v4 (Tailwind CSS)** | Systeme de style utilitaire compatible React Native et Web. Garantit un rendu CSS identique sur toutes les plateformes, evitant les divergences visuelles entre simulateur et vrai appareil. |
 | **React Navigation v7** | Bibliotheque de navigation mature et performante, sous-jacente a Expo Router. Gere les transitions, le theming et l'accessibilite. |
 | **AsyncStorage** | Stockage cle-valeur persistant cross-platform pour les sessions utilisateur. Alternative legere a SQLite pour les donnees simples. |

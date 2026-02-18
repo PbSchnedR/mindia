@@ -1,10 +1,11 @@
 import { useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import {
-  StyleSheet, View, Pressable, Linking, Text, Alert, Platform, TextInput, ScrollView, Animated,
+  StyleSheet, View, Pressable, Linking, Text, Alert, Platform, TextInput, ScrollView, Animated, Modal, Dimensions,
 } from 'react-native';
 import { Image } from 'expo-image';
 import { Ionicons } from '@expo/vector-icons';
+import { LineChart } from 'react-native-chart-kit';
 
 import { Button } from '@/components/ui/button';
 import { PageLayout, HeaderIconButton } from '@/components/ui/page-layout';
@@ -34,12 +35,14 @@ const BOTTOM_TABS: TabItem[] = [
   { key: 'journal', label: 'Journal', icon: 'book-outline', iconActive: 'book' },
   { key: 'reports', label: 'Constats', icon: 'reader-outline', iconActive: 'reader' },
   { key: 'booking', label: 'RDV', icon: 'calendar-outline', iconActive: 'calendar' },
+  { key: 'progress', label: 'Progression', icon: 'trending-up-outline', iconActive: 'trending-up' },
 ];
 const DESKTOP_NAV = [
   { key: 'bubble', label: 'Ma Bulle', icon: 'chatbubbles-outline' as const, iconActive: 'chatbubbles' as const, desc: 'Parler a ton assistant IA' },
   { key: 'journal', label: 'Journal', icon: 'book-outline' as const, iconActive: 'book' as const, desc: 'Ecrire ton ressenti au quotidien' },
   { key: 'reports', label: 'Constats', icon: 'reader-outline' as const, iconActive: 'reader' as const, desc: 'Observations de ton therapeute' },
   { key: 'booking', label: 'Rendez-vous', icon: 'calendar-outline' as const, iconActive: 'calendar' as const, desc: 'Prendre RDV en ligne' },
+  { key: 'progress', label: 'Progression', icon: 'trending-up-outline' as const, iconActive: 'trending-up' as const, desc: 'Suivre ton evolution' },
 ];
 
 const JOURNAL_MOODS: { value: number; icon: keyof typeof Ionicons.glyphMap; label: string; color: string }[] = [
@@ -71,6 +74,14 @@ export default function PatientDashboardScreen() {
   const [newJournalMood, setNewJournalMood] = useState(3);
   const [savingJournal, setSavingJournal] = useState(false);
   const [reportsSub, setReportsSub] = useState<'therapist' | 'ai'>('therapist');
+  const [crisisEvals, setCrisisEvals] = useState<any[]>([]);
+  const [recommendedActions, setRecommendedActions] = useState<any[]>([]);
+  const [showConsentModal, setShowConsentModal] = useState(false);
+  const [showMoodReminder, setShowMoodReminder] = useState(false);
+  const [reminderMood, setReminderMood] = useState(3);
+  const [reminderText, setReminderText] = useState('');
+  const [savingReminder, setSavingReminder] = useState(false);
+  const [conversationsCount, setConversationsCount] = useState(0);
 
   // Bubble animation
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -104,7 +115,21 @@ export default function PatientDashboardScreen() {
       const { messages } = await api.messages.get(patientId);
       const aiMsgs = messages.filter((m: any) => m.from === 'ai');
       if (aiMsgs.length > 0) setLastSummary(aiMsgs[aiMsgs.length - 1].text);
-      try { const { entries } = await api.journal.get(patientId); setJournalEntries(entries || []); } catch {}
+      try {
+        const { entries } = await api.journal.get(patientId);
+        setJournalEntries(entries || []);
+        // Vérifier si le patient a rempli son journal aujourd'hui
+        const today = new Date().toDateString();
+        const hasEntryToday = (entries || []).some((e: any) => new Date(e.date).toDateString() === today);
+        if (!hasEntryToday && (entries || []).length > 0) {
+          // Ne montrer le rappel que si le patient a déjà utilisé le journal au moins une fois
+          setShowMoodReminder(true);
+        }
+      } catch {}
+      try { const { evaluations } = await api.crisisEval.get(patientId); setCrisisEvals(evaluations || []); } catch {}
+      try { const { actions } = await api.actions.get(patientId); setRecommendedActions(actions || []); } catch {}
+      try { const { conversations } = await api.conversations.listForUser(patientId); setConversationsCount(conversations?.length || 0); } catch {}
+      if (!user.dataConsent?.accepted) setShowConsentModal(true);
       const sessions = await listChatSessionsForPatient(patientId);
       if (sessions.length > 0) { setChatSessionId(sessions[0].id); if (!moodFromUser) setMood(sessions[0].severity); }
       else { const created = await startChatSession(patientId, session.therapistId); setChatSessionId(created.id); if (!moodFromUser) setMood(created.severity); }
@@ -127,6 +152,12 @@ export default function PatientDashboardScreen() {
   };
   const fmtDate = (d: string) => new Date(d).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 
+  const handleAcceptConsent = async () => {
+    if (!session || session.role !== 'patient') return;
+    try { await api.consent.accept(session.patientId); setShowConsentModal(false); }
+    catch { Alert.alert('Erreur', 'Impossible d\'enregistrer le consentement.'); }
+  };
+
   if (sessionLoading || loading) return <View style={[s.center, { flex: 1, backgroundColor: colors.bg }]}><Text style={font.bodySmall}>Chargement...</Text></View>;
   if (error) return (
     <View style={[s.center, { flex: 1, backgroundColor: colors.bg }]}>
@@ -141,6 +172,7 @@ export default function PatientDashboardScreen() {
     journal: { title: 'Mon Journal', desc: 'Garde une trace de tes ressentis au quotidien.', icon: 'book' },
     reports: { title: 'Constats', desc: 'Observations de ton therapeute et syntheses IA.', icon: 'reader' },
     booking: { title: 'Rendez-vous', desc: 'Reserve un creneau avec ton therapeute.', icon: 'calendar' },
+    progress: { title: 'Progression', desc: 'Suis ton evolution au fil du temps.', icon: 'trending-up' },
   };
   const currentSection = sectionDescs[activeTab] || sectionDescs.bubble;
 
@@ -196,6 +228,24 @@ export default function PatientDashboardScreen() {
           </SectionCard>
         )}
       </View>
+
+      {/* Recommended actions from therapist */}
+      {recommendedActions.length > 0 && (
+        <SectionCard title="Actions recommandees par ton therapeute" icon="bulb-outline" variant="elevated">
+          {recommendedActions.map((action: any, i: number) => (
+            <Pressable key={i} onPress={() => action.url ? Linking.openURL(action.url) : undefined} style={s.exerciseRow}>
+              <View style={[s.exerciseIcon, { backgroundColor: colors.primaryLight }]}>
+                <Ionicons name={action.type === 'exercise' ? 'fitness' : action.type === 'contact' ? 'call' : action.type === 'media' ? 'musical-notes' : 'bulb'} size={20} color={colors.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={font.bodyMedium}>{action.title}</Text>
+                {action.description ? <Text style={font.caption}>{action.description}</Text> : null}
+              </View>
+              {action.url && <Ionicons name="open-outline" size={16} color={colors.textTertiary} />}
+            </Pressable>
+          ))}
+        </SectionCard>
+      )}
     </View>
   );
 
@@ -291,14 +341,8 @@ export default function PatientDashboardScreen() {
         )
       ) : (
         <>
-          {lastSummary && (
-            <SectionCard icon="sparkles" iconColor={colors.ai} variant="elevated">
-              <Text style={[font.label, { color: colors.ai }]}>Derniere synthese</Text>
-              <Text style={font.bodySmall}>{lastSummary}</Text>
-            </SectionCard>
-          )}
-          {aiReports.length === 0 && !lastSummary ? (
-            <EmptyState icon="sparkles-outline" title="Aucune synthese" subtitle="Apres tes echanges" />
+          {aiReports.length === 0 ? (
+            <EmptyState icon="sparkles-outline" title="Aucun constat IA" subtitle="Ton thérapeute peut en générer à partir de tes discussions" />
           ) : (
             <View style={s.cardList}>
               {aiReports.map((r) => (
@@ -327,11 +371,181 @@ export default function PatientDashboardScreen() {
     </View>
   );
 
-  const renderContent = () => { switch (activeTab) { case 'bubble': return renderBubble(); case 'journal': return renderJournal(); case 'reports': return renderReports(); case 'booking': return renderBooking(); default: return renderBubble(); } };
+  // ── Progression ────────────────────────────────────────
+  const renderProgress = () => {
+    const recentMoods = journalEntries.slice(0, 14).reverse();
+    const chartWidth = isDesktop ? 500 : Dimensions.get('window').width - 80;
+
+    return (
+      <View style={s.tabContent}>
+        {/* Stats */}
+        <View style={isDesktop ? s.twoColRow : s.colStack}>
+          <SectionCard variant="elevated" style={isDesktop ? { flex: 1 } : undefined}>
+            <View style={{ alignItems: 'center', gap: spacing.sm }}>
+              <Ionicons name="book" size={28} color={colors.primary} />
+              <Text style={font.subtitle}>{journalEntries.length}</Text>
+              <Text style={font.caption}>Entrees journal</Text>
+            </View>
+          </SectionCard>
+          <SectionCard variant="elevated" style={isDesktop ? { flex: 1 } : undefined}>
+            <View style={{ alignItems: 'center', gap: spacing.sm }}>
+              <Ionicons name="chatbubbles" size={28} color={colors.ai} />
+              <Text style={font.subtitle}>{conversationsCount}</Text>
+              <Text style={font.caption}>Conversations</Text>
+            </View>
+          </SectionCard>
+        </View>
+
+        {/* Mood chart with LineChart */}
+        <SectionCard title="Evolution de l'humeur" icon="analytics-outline" variant="elevated">
+          {recentMoods.length < 2 ? (
+            <Text style={font.caption}>Pas assez de donnees (min. 2 entrees journal)</Text>
+          ) : (
+            <View style={{ gap: spacing.md }}>
+              <LineChart
+                data={{
+                  labels: recentMoods.map((e: any) => {
+                    const d = new Date(e.date);
+                    return `${d.getDate()}/${d.getMonth() + 1}`;
+                  }),
+                  datasets: [{
+                    data: recentMoods.map((e: any) => e.mood || 3),
+                    color: () => colors.primary,
+                    strokeWidth: 2.5,
+                  }],
+                }}
+                width={chartWidth}
+                height={200}
+                yAxisSuffix=""
+                yAxisInterval={1}
+                fromZero={false}
+                segments={4}
+                chartConfig={{
+                  backgroundColor: colors.bg,
+                  backgroundGradientFrom: colors.bg,
+                  backgroundGradientTo: colors.bg,
+                  decimalPlaces: 0,
+                  color: (opacity = 1) => `rgba(99, 102, 241, ${opacity})`,
+                  labelColor: () => colors.textTertiary,
+                  propsForDots: {
+                    r: '5',
+                    strokeWidth: '2',
+                    stroke: colors.primaryDark,
+                  },
+                  propsForBackgroundLines: {
+                    strokeDasharray: '4 4',
+                    stroke: colors.borderLight,
+                  },
+                  style: { borderRadius: radius.lg },
+                }}
+                bezier
+                style={{ borderRadius: radius.lg, marginLeft: -spacing.lg }}
+                withInnerLines
+                withOuterLines={false}
+                yLabelsOffset={8}
+                xLabelsOffset={-4}
+              />
+              <View style={s.moodLegend}>
+                {JOURNAL_MOODS.map((m) => (
+                  <View key={m.value} style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
+                    <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: m.color }} />
+                    <Text style={{ fontSize: 10, color: colors.textTertiary }}>{m.label}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          )}
+        </SectionCard>
+
+        {/* Crisis evaluations history */}
+        <SectionCard title="Evaluations de crise" icon="alert-circle-outline" variant="elevated">
+          {crisisEvals.length === 0 ? (
+            <Text style={font.caption}>Aucune evaluation</Text>
+          ) : (
+            <View style={{ gap: spacing.md }}>
+              {crisisEvals.slice(0, 10).map((ev: any, i: number) => (
+                <View key={i} style={s.exerciseRow}>
+                  <View style={[s.exerciseIcon, { backgroundColor: ev.level >= 2 ? colors.errorLight : ev.level >= 1 ? colors.warningLight : colors.successLight }]}>
+                    <Ionicons name={ev.level >= 2 ? 'warning' : ev.level >= 1 ? 'alert-circle' : 'checkmark-circle'} size={20} color={ev.level >= 2 ? colors.error : ev.level >= 1 ? colors.warning : colors.success} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={font.bodyMedium}>Niveau {ev.level}/3{ev.flagged ? ' — Signale' : ''}</Text>
+                    {ev.summary ? <Text style={font.caption} numberOfLines={2}>{ev.summary}</Text> : null}
+                    <Text style={font.caption}>{fmtDate(ev.date)}</Text>
+                  </View>
+                </View>
+              ))}
+            </View>
+          )}
+        </SectionCard>
+      </View>
+    );
+  };
+
+  const renderContent = () => { switch (activeTab) { case 'bubble': return renderBubble(); case 'journal': return renderJournal(); case 'reports': return renderReports(); case 'booking': return renderBooking(); case 'progress': return renderProgress(); default: return renderBubble(); } };
+
+  const handleSaveMoodReminder = async () => {
+    if (!session || session.role !== 'patient') return;
+    setSavingReminder(true);
+    try {
+      const { entry } = await api.journal.add(session.patientId, { text: reminderText.trim() || 'Rappel quotidien', mood: reminderMood });
+      setJournalEntries((prev) => [entry, ...prev]);
+      setShowMoodReminder(false);
+      setReminderText('');
+      setReminderMood(3);
+    } catch {}
+    finally { setSavingReminder(false); }
+  };
+
+  const moodReminderModal = (
+    <Modal visible={showMoodReminder && !showConsentModal} animationType="fade" transparent onRequestClose={() => setShowMoodReminder(false)}>
+      <View style={s.consentOverlay}>
+        <View style={[s.consentCard, { gap: spacing.lg }]}>
+          <Ionicons name="sunny-outline" size={48} color={colors.warning} style={{ alignSelf: 'center' }} />
+          <Text style={[font.subtitle, { textAlign: 'center' }]}>Comment tu te sens aujourd'hui ?</Text>
+          <Text style={[font.bodySmall, { textAlign: 'center' }]}>Prends un moment pour noter ton humeur. Ca aide a suivre ta progression.</Text>
+          <View style={s.moodChipRow}>
+            {JOURNAL_MOODS.map((m) => (
+              <Pressable key={m.value} onPress={() => setReminderMood(m.value)} style={[s.moodChip, reminderMood === m.value && { backgroundColor: m.color, borderColor: m.color }]}>
+                <Ionicons name={m.icon} size={16} color={reminderMood === m.value ? '#fff' : m.color} />
+                <Text style={[s.moodChipLabel, reminderMood === m.value && { color: '#fff' }]}>{m.label}</Text>
+              </Pressable>
+            ))}
+          </View>
+          <TextInput
+            placeholder="Un mot sur ta journee ? (optionnel)"
+            placeholderTextColor={colors.textTertiary}
+            value={reminderText}
+            onChangeText={setReminderText}
+            multiline
+            style={s.journalInput}
+            textAlignVertical="top"
+          />
+          <View style={{ flexDirection: 'row', gap: spacing.md }}>
+            <Button title="Plus tard" variant="ghost" onPress={() => setShowMoodReminder(false)} style={{ flex: 1 }} />
+            <Button title="Enregistrer" icon="checkmark" onPress={handleSaveMoodReminder} loading={savingReminder} style={{ flex: 1 }} />
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+
+  const consentModal = (
+    <Modal visible={showConsentModal} animationType="fade" transparent onRequestClose={() => {}}>
+      <View style={s.consentOverlay}>
+        <View style={s.consentCard}>
+          <Ionicons name="shield-checkmark" size={48} color={colors.primary} style={{ alignSelf: 'center' }} />
+          <Text style={[font.subtitle, { textAlign: 'center' }]}>Protection de tes donnees</Text>
+          <Text style={[font.bodySmall, { textAlign: 'center' }]}>Pour utiliser MindIA, tu dois accepter que tes donnees soient traitees de maniere securisee et confidentielle, conformement au RGPD.</Text>
+          <Button title="J'accepte" icon="checkmark" onPress={handleAcceptConsent} />
+        </View>
+      </View>
+    </Modal>
+  );
 
   if (isDesktop) {
     return (
-      <View style={s.desktopRoot}>
+      <>{consentModal}{moodReminderModal}<View style={s.desktopRoot}>
         <View style={s.desktopSidebar}>
           <View style={s.sidebarHeader}>
             <View style={s.sidebarLogoRow}><Image source={require('@/assets/images/logo-mindia.png')} style={s.sidebarLogo} /><Text style={s.sidebarTitle}><Text style={{ color: colors.text }}>Mind</Text><Text style={{ color: colors.primary }}>IA</Text></Text></View>
@@ -351,28 +565,32 @@ export default function PatientDashboardScreen() {
           {activeTab === 'reports' && renderReportsStickyHeader()}
           <ScrollView contentContainerStyle={s.desktopScroll} showsVerticalScrollIndicator={false}>{renderContent()}</ScrollView>
         </View>
-      </View>
+      </View></>
     );
   }
 
   return (
-    <PageLayout
-      title={currentSection.title}
-      subtitle={`Bonjour ${patientName || 'toi'}`}
-      headerRight={headerRight}
-      stickyContent={(
-        <View>
-          <View style={s.mobileDesc}>
-            <Ionicons name={currentSection.icon} size={16} color={colors.primary} />
-            <Text style={[font.caption, { flex: 1 }]}>{currentSection.desc}</Text>
+    <>
+      {consentModal}
+      {moodReminderModal}
+      <PageLayout
+        title={currentSection.title}
+        subtitle={`Bonjour ${patientName || 'toi'}`}
+        headerRight={headerRight}
+        stickyContent={(
+          <View>
+            <View style={s.mobileDesc}>
+              <Ionicons name={currentSection.icon} size={16} color={colors.primary} />
+              <Text style={[font.caption, { flex: 1 }]}>{currentSection.desc}</Text>
+            </View>
+            {activeTab === 'reports' && renderReportsStickyHeader()}
           </View>
-          {activeTab === 'reports' && renderReportsStickyHeader()}
-        </View>
-      )}
-      bottomContent={<BottomTabBar tabs={BOTTOM_TABS} activeKey={activeTab} onChange={setActiveTab} />}
-    >
-      {renderContent()}
-    </PageLayout>
+        )}
+        bottomContent={<BottomTabBar tabs={BOTTOM_TABS} activeKey={activeTab} onChange={setActiveTab} />}
+      >
+        {renderContent()}
+      </PageLayout>
+    </>
   );
 }
 
@@ -449,4 +667,14 @@ const s = StyleSheet.create({
   subTabBadgeText: { fontSize: 11, fontWeight: '700', color: colors.primary },
   sectionHint: { flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, paddingHorizontal: spacing.md, paddingVertical: spacing.md, backgroundColor: colors.bgSecondary, borderRadius: radius.md },
   calendlyWrap: { borderRadius: radius.xl, overflow: 'hidden', backgroundColor: colors.bg, ...shadows.md },
+
+  // Mood chart
+  moodChart: { flexDirection: 'row', alignItems: 'flex-end', gap: spacing.xs, height: 100, paddingTop: spacing.lg },
+  moodBarCol: { flex: 1, alignItems: 'center', gap: spacing.xs },
+  moodBar: { width: '100%', maxWidth: 24, borderRadius: radius.sm, minHeight: 4 },
+  moodLegend: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md, justifyContent: 'center' },
+
+  // Consent modal
+  consentOverlay: { flex: 1, backgroundColor: colors.overlay, justifyContent: 'center', alignItems: 'center', padding: spacing['2xl'] },
+  consentCard: { backgroundColor: colors.bg, borderRadius: radius['2xl'], padding: spacing['3xl'], maxWidth: 420, width: '100%', gap: spacing.xl, ...shadows.lg },
 });

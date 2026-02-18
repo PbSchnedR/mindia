@@ -382,13 +382,14 @@ export const api = {
       userId: string,
       conversationId: string,
       from: 'therapist' | 'patient' | 'ai',
-      text: string
+      text: string,
+      extra?: { crisisLevel?: number; crisisReason?: string }
     ): Promise<{ message: any; messages: any[] }> => {
       return apiRequest(
         `/users/${userId}/conversations/${conversationId}/messages`,
         {
           method: 'POST',
-          body: JSON.stringify({ from, text }),
+          body: JSON.stringify({ from, text, ...extra }),
         }
       );
     },
@@ -427,6 +428,23 @@ export const api = {
         body: JSON.stringify(params),
       });
     },
+    generateReport: async (patientId: string, conversationId?: string): Promise<{ report: any }> => {
+      return apiRequest(`/ai/report/${patientId}`, {
+        method: 'POST',
+        body: JSON.stringify(conversationId ? { conversationId } : {}),
+      });
+    },
+  },
+
+  // Admin
+  admin: {
+    getStats: async (): Promise<{ stats: any }> => apiRequest('/admin/stats'),
+    getTherapists: async (): Promise<{ therapists: any[] }> => apiRequest('/admin/therapists'),
+    createTherapist: async (data: { username: string; email: string; password: string; profession?: string; practiceArea?: string; phone?: string }): Promise<{ therapist: any }> => {
+      return apiRequest('/admin/therapists', { method: 'POST', body: JSON.stringify(data) });
+    },
+    deleteTherapist: async (id: string): Promise<void> => apiRequest(`/admin/therapists/${id}`, { method: 'DELETE' }),
+    getAllPatients: async (): Promise<{ patients: any[] }> => apiRequest('/admin/patients'),
   },
 
   // Legacy - pour compatibilité avec le code existant
