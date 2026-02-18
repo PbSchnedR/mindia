@@ -230,9 +230,14 @@ export default function PatientDashboardScreen() {
       </View>
 
       {/* Recommended actions from therapist */}
-      {recommendedActions.length > 0 && (
-        <SectionCard title="Actions recommandees par ton therapeute" icon="bulb-outline" variant="elevated">
-          {recommendedActions.map((action: any, i: number) => (
+      <SectionCard title="Actions recommandees par ton therapeute" icon="bulb-outline" variant="elevated">
+        {recommendedActions.length === 0 ? (
+          <View style={{ alignItems: 'center', gap: spacing.sm, paddingVertical: spacing.lg }}>
+            <Ionicons name="bulb-outline" size={32} color={colors.textTertiary} />
+            <Text style={[font.caption, { textAlign: 'center' }]}>Ton therapeute n'a pas encore ajoute d'actions recommandees.</Text>
+          </View>
+        ) : (
+          recommendedActions.map((action: any, i: number) => (
             <Pressable key={i} onPress={() => action.url ? Linking.openURL(action.url) : undefined} style={s.exerciseRow}>
               <View style={[s.exerciseIcon, { backgroundColor: colors.primaryLight }]}>
                 <Ionicons name={action.type === 'exercise' ? 'fitness' : action.type === 'contact' ? 'call' : action.type === 'media' ? 'musical-notes' : 'bulb'} size={20} color={colors.primary} />
@@ -243,9 +248,9 @@ export default function PatientDashboardScreen() {
               </View>
               {action.url && <Ionicons name="open-outline" size={16} color={colors.textTertiary} />}
             </Pressable>
-          ))}
-        </SectionCard>
-      )}
+          ))
+        )}
+      </SectionCard>
     </View>
   );
 

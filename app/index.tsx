@@ -28,9 +28,9 @@ export default function LandingScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [mode, setMode] = useState<Mode>('patient');
 
-  const [patientEmail, setPatientEmail] = useState('');
+  const [patientEmail, setPatientEmail] = useState('a@mail.co');
   const [patientLoading, setPatientLoading] = useState(false);
-  const [therapistEmail, setTherapistEmail] = useState('');
+  const [therapistEmail, setTherapistEmail] = useState('camille@cabinet-demo.fr');
   const [therapistPassword, setTherapistPassword] = useState('');
   const [therapistLoading, setTherapistLoading] = useState(false);
   const [loginError, setLoginError] = useState<string | null>(null);

@@ -289,11 +289,7 @@ export default function TherapistPatientDetailScreen() {
           <View style={s.infoItem}><Ionicons name="mail-outline" size={16} color={colors.textTertiary} /><View><Text style={font.caption}>Email</Text><Text style={font.bodyMedium}>{patientEmail || '--'}</Text></View></View>
           {editingInfo ? (
             <>
-              <View style={s.infoItem}><Ionicons name="bookmark-outline" size={16} color={colors.textTertiary} />
-                <View style={{ flex: 1 }}><Text style={font.caption}>Sujet de therapie</Text>
-                  <TextInput value={editTherapyTopic} onChangeText={setEditTherapyTopic} placeholder="Sujet..." placeholderTextColor={colors.textTertiary} style={[s.editInput]} />
-                </View>
-              </View>
+             
               <View style={s.infoItem}><Ionicons name="calendar-outline" size={16} color={colors.textTertiary} />
                 <View style={{ flex: 1 }}><Text style={font.caption}>Nombre de seances</Text>
                   <TextInput value={editSessionsDone} onChangeText={setEditSessionsDone} placeholder="0" placeholderTextColor={colors.textTertiary} keyboardType="numeric" style={[s.editInput]} />
@@ -306,7 +302,6 @@ export default function TherapistPatientDetailScreen() {
             </>
           ) : (
             <>
-              <View style={s.infoItem}><Ionicons name="bookmark-outline" size={16} color={colors.textTertiary} /><View><Text style={font.caption}>Sujet</Text><Text style={font.bodyMedium}>{editTherapyTopic || 'Non precise'}</Text></View></View>
               <View style={s.infoItem}><Ionicons name="calendar-outline" size={16} color={colors.textTertiary} /><View><Text style={font.caption}>Seances</Text><Text style={font.bodyMedium}>{editSessionsDone || '--'}</Text></View></View>
             </>
           )}

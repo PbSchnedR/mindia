@@ -46,6 +46,7 @@ export default function TherapistDashboardScreen() {
   const [newEmail, setNewEmail] = useState('');
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
+  const [showConsentModal, setShowConsentModal] = useState(false);
 
   useEffect(() => {
     if (sessionLoading) return;
@@ -58,6 +59,11 @@ export default function TherapistDashboardScreen() {
       try {
         const therapist = await getTherapistById(session.therapistId);
         if (therapist) setTherapistName(`${therapist.firstName} ${therapist.lastName}`);
+        // Check RGPD consent
+        try {
+          const { user } = await api.users.getById(session.therapistId);
+          if (!user.dataConsent?.accepted) setShowConsentModal(true);
+        } catch {}
         await loadPatients();
       } catch (err: any) {
         if (err?.status === 401) await handleSignOut();
@@ -131,6 +137,42 @@ export default function TherapistDashboardScreen() {
       </Pressable>
     );
   };
+
+  const handleAcceptConsent = async () => {
+    if (!session || session.role !== 'therapist') return;
+    try { await api.consent.accept(session.therapistId); setShowConsentModal(false); }
+    catch { Alert.alert('Erreur', 'Impossible d\'enregistrer le consentement.'); }
+  };
+
+  const renderConsentModal = () => (
+    <Modal visible={showConsentModal} animationType="fade" transparent onRequestClose={() => {}}>
+      <View style={s.modalOverlay}>
+        <View style={[s.modalCard, { gap: spacing.xl, padding: spacing['2xl'] }]}>
+          <Ionicons name="shield-checkmark" size={48} color={colors.primary} style={{ alignSelf: 'center' }} />
+          <Text style={[font.subtitle, { textAlign: 'center' }]}>Protection des donnees</Text>
+          <Text style={[font.bodySmall, { textAlign: 'center' }]}>
+            En tant que professionnel, vous devez accepter les conditions de collecte et de traitement des donnees conformement au RGPD.
+            Les donnees de vos patients sont chiffrees et traitees de maniere securisee.
+          </Text>
+          <View style={{ gap: spacing.sm }}>
+            <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm }}>
+              <Ionicons name="checkmark-circle" size={16} color={colors.success} style={{ marginTop: 2 }} />
+              <Text style={[font.bodySmall, { flex: 1 }]}>Chiffrement AES-256 des donnees sensibles</Text>
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm }}>
+              <Ionicons name="checkmark-circle" size={16} color={colors.success} style={{ marginTop: 2 }} />
+              <Text style={[font.bodySmall, { flex: 1 }]}>Acces limite aux professionnels autorises</Text>
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm }}>
+              <Ionicons name="checkmark-circle" size={16} color={colors.success} style={{ marginTop: 2 }} />
+              <Text style={[font.bodySmall, { flex: 1 }]}>Droit a l'effacement et a la portabilite</Text>
+            </View>
+          </View>
+          <Button title="J'accepte les conditions" icon="checkmark" onPress={handleAcceptConsent} />
+        </View>
+      </View>
+    </Modal>
+  );
 
   // ── Create Modal ───────────────────────────────────────
   const renderCreateModal = () => (
@@ -235,6 +277,7 @@ export default function TherapistDashboardScreen() {
         </View>
 
         {renderCreateModal()}
+        {renderConsentModal()}
       </>
     );
   }
@@ -285,6 +328,7 @@ export default function TherapistDashboardScreen() {
         />
       </View>
       {renderCreateModal()}
+      {renderConsentModal()}
     </>
   );
 }
